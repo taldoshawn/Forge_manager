@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- rear yellow folder -->
+    <path android:fillColor="#FFC41D" android:pathData="M64,21 L82,21 C84,21 86,22 87,24 L91,29 L99,29 C102,29 104,31 104,34 L104,72 C104,75 102,77 99,77 L64,77 Z"/>
+    <path android:fillColor="#FFE05A" android:pathData="M68,25 L81,25 C83,25 84,26 85,28 L88,32 L100,32 L100,36 L68,36 Z"/>
+
+    <!-- rear blue tools folder -->
+    <path android:fillColor="#0879F7" android:pathData="M38,17 L61,17 C64,17 65,18 67,21 L71,25 L87,25 C90,25 92,27 92,30 L92,69 C92,72 90,74 87,74 L38,74 Z"/>
+    <path android:fillColor="#1599FF" android:pathData="M42,22 L59,22 C61,22 62,23 64,25 L68,29 L88,29 L88,34 L42,34 Z"/>
+
+    <!-- white code sheet -->
+    <path android:fillColor="#F7F8FB" android:pathData="M18,13 C18,10 20,8 23,8 L53,8 L67,22 L67,54 C67,57 65,59 62,59 L23,59 C20,59 18,57 18,54 Z"/>
+    <path android:fillColor="#D9DEE8" android:pathData="M53,8 L53,20 C53,23 55,24 58,24 L67,24 Z"/>
+    <path android:strokeColor="#252A31" android:strokeWidth="4.2" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="@android:color/transparent" android:pathData="M34,29 L27,35 L34,41 M48,26 L42,44 M53,29 L60,35 L53,41"/>
+
+    <!-- wrench and screwdriver -->
+    <path android:strokeColor="#F4F6FA" android:strokeWidth="7" android:strokeLineCap="round" android:fillColor="@android:color/transparent" android:pathData="M60,31 L78,49"/>
+    <path android:fillColor="#F4F6FA" android:pathData="M55,25 C51,21 49,17 51,13 L57,19 L62,17 L63,12 C67,15 68,20 65,24 L62,27 Z"/>
+    <path android:strokeColor="#F4F6FA" android:strokeWidth="5" android:strokeLineCap="round" android:fillColor="@android:color/transparent" android:pathData="M77,31 L61,48"/>
+    <path android:fillColor="#E8ECF4" android:pathData="M78,27 L86,19 L90,23 L82,31 Z"/>
+
+    <!-- front black folder -->
+    <path android:fillColor="#15191F" android:pathData="M9,40 C9,36 12,33 16,33 L39,33 C42,33 44,34 46,37 L50,42 L92,42 C96,42 99,45 99,49 L99,91 C99,96 96,99 91,99 L17,99 C12,99 9,96 9,91 Z"/>
+    <path android:fillColor="#20252D" android:pathData="M13,45 L44,45 L49,50 L95,50 L95,55 L13,55 Z"/>
+    <path android:strokeColor="#3E4550" android:strokeWidth="1.5" android:fillColor="@android:color/transparent" android:pathData="M9,40 C9,36 12,33 16,33 L39,33 C42,33 44,34 46,37 L50,42 L92,42 C96,42 99,45 99,49 L99,91 C99,96 96,99 91,99 L17,99 C12,99 9,96 9,91 Z"/>
+
+    <!-- F -->
+    <path android:fillColor="#F4F6FA" android:pathData="M27,57 L53,57 L53,65 L37,65 L37,73 L49,73 L49,81 L37,81 L37,94 L27,94 Z"/>
+    <path android:fillColor="#0787FF" android:pathData="M27,79 L37,73 L37,88 L27,94 Z"/>
+
+    <!-- G -->
+    <path android:strokeColor="#F4F6FA" android:strokeWidth="9" android:strokeLineCap="square" android:strokeLineJoin="round" android:fillColor="@android:color/transparent" android:pathData="M82,66 C78,60 72,57 66,57 C55,57 49,65 49,76 C49,87 56,94 67,94 C75,94 82,90 85,85 L85,76 L72,76"/>
+    <path android:fillColor="#0787FF" android:pathData="M72,55 L87,55 L82,65 L73,65 Z"/>
+</vector>
