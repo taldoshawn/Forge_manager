@@ -108,7 +108,7 @@ object EditorTools {
         for ((kind, regex) in patterns) {
             for (match in regex.findAll(source)) {
                 if (out.size >= limit) break
-                val name = match.groups.getOrNull(1)?.value ?: match.value.trim()
+                val name = match.groups[1]?.value ?: match.value.trim()
                 out += EditorSymbol(name, kind, lineAt(starts, match.range.first))
             }
         }

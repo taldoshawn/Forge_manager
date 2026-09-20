@@ -97,7 +97,9 @@ class HexViewerActivity : ForgeActivity() {
         top.addView(tool("↶", "Desfazer") { performUndo() })
         top.addView(tool("↷", "Refazer") { performRedo() })
         top.addView(tool("⌕", "Buscar") { showSearch() })
-        top.addView(tool("⋮", "Mais") { showMore(it) })
+        val moreButton = tool("⋮", "Mais") { }
+        moreButton.setOnClickListener { showMore(moreButton) }
+        top.addView(moreButton)
         addView(top, LinearLayout.LayoutParams(-1, dp(52)))
 
         val nav = LinearLayout(this@HexViewerActivity).apply {

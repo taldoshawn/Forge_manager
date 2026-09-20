@@ -147,8 +147,8 @@ object SyntaxHighlighter {
 
     private fun parseHexColor(raw: String): Int? = runCatching {
         val value = when (raw.length) {
-            4 -> "#" + raw.drop(1).joinToString("") { "$it$it" }
-            5 -> "#" + raw.drop(1).joinToString("") { "$it$it" }
+            4 -> "#" + raw.drop(1).map { "$it$it" }.joinToString("")
+            5 -> "#" + raw.drop(1).map { "$it$it" }.joinToString("")
             else -> raw
         }
         Color.parseColor(value)
