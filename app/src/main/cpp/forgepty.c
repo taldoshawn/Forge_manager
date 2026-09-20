@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <pty.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -87,9 +88,7 @@ Java_com_forgemanager_app_features_terminal_PtyBridge_nativeSpawn(
     }
 
     if (pid == 0) {
-        if (cwd != NULL && cwd[0] != '\0') {
-            (void) chdir(cwd);
-        }
+        if (cwd != NULL && cwd[0] != '\0') (void) chdir(cwd);
         for (int i = 0; i < envc; ++i) {
             char *entry = environment[i];
             char *equals = entry == NULL ? NULL : strchr(entry, '=');
@@ -108,9 +107,7 @@ Java_com_forgemanager_app_features_terminal_PtyBridge_nativeSpawn(
     free_string_array(environment, envc);
     free(cwd);
 
-    jlong values[2];
-    values[0] = (jlong) master_fd;
-    values[1] = (jlong) pid;
+    jlong values[2] = {(jlong) master_fd, (jlong) pid};
     jlongArray result = (*env)->NewLongArray(env, 2);
     if (result == NULL) {
         close(master_fd);
@@ -128,21 +125,16 @@ Java_com_forgemanager_app_features_terminal_PtyBridge_nativeRead(
     if (length <= 0) return 0;
     jsize size = (*env)->GetArrayLength(env, buffer);
     if (offset < 0 || length < 0 || offset > size || length > size - offset) {
-        errno = EINVAL;
-        throw_io(env, "invalid read range");
-        return -1;
+        errno = EINVAL; throw_io(env, "invalid read range"); return -1;
     }
     jbyte *bytes = (*env)->GetByteArrayElements(env, buffer, NULL);
     if (bytes == NULL) return -1;
     ssize_t count;
-    do {
-        count = read(fd, bytes + offset, (size_t) length);
-    } while (count < 0 && errno == EINTR);
+    do { count = read(fd, bytes + offset, (size_t) length); } while (count < 0 && errno == EINTR);
     (*env)->ReleaseByteArrayElements(env, buffer, bytes, 0);
     if (count < 0) {
-        if (errno == EIO) return -1; /* common PTY EOF */
-        throw_io(env, "PTY read failed");
-        return -1;
+        if (errno == EIO) return -1;
+        throw_io(env, "PTY read failed"); return -1;
     }
     return (jint) count;
 }
@@ -154,9 +146,7 @@ Java_com_forgemanager_app_features_terminal_PtyBridge_nativeWrite(
     if (length <= 0) return 0;
     jsize size = (*env)->GetArrayLength(env, buffer);
     if (offset < 0 || length < 0 || offset > size || length > size - offset) {
-        errno = EINVAL;
-        throw_io(env, "invalid write range");
-        return -1;
+        errno = EINVAL; throw_io(env, "invalid write range"); return -1;
     }
     jbyte *bytes = (*env)->GetByteArrayElements(env, buffer, NULL);
     if (bytes == NULL) return -1;
@@ -166,8 +156,7 @@ Java_com_forgemanager_app_features_terminal_PtyBridge_nativeWrite(
         if (count < 0 && errno == EINTR) continue;
         if (count < 0) {
             (*env)->ReleaseByteArrayElements(env, buffer, bytes, JNI_ABORT);
-            throw_io(env, "PTY write failed");
-            return -1;
+            throw_io(env, "PTY write failed"); return -1;
         }
         total += count;
     }
@@ -178,8 +167,7 @@ Java_com_forgemanager_app_features_terminal_PtyBridge_nativeWrite(
 JNIEXPORT void JNICALL
 Java_com_forgemanager_app_features_terminal_PtyBridge_nativeResize(
         JNIEnv *env, jobject thiz, jint fd, jint rows, jint cols) {
-    (void) env;
-    (void) thiz;
+    (void) env; (void) thiz;
     struct winsize window;
     memset(&window, 0, sizeof(window));
     window.ws_row = (unsigned short) (rows > 0 ? rows : 24);
@@ -193,14 +181,11 @@ Java_com_forgemanager_app_features_terminal_PtyBridge_nativeWait(
     (void) thiz;
     int status = 0;
     pid_t result;
-    do {
-        result = waitpid((pid_t) pid, &status, block ? 0 : WNOHANG);
-    } while (result < 0 && errno == EINTR);
+    do { result = waitpid((pid_t) pid, &status, block ? 0 : WNOHANG); } while (result < 0 && errno == EINTR);
     if (result == 0) return -1;
     if (result < 0) {
         if (errno == ECHILD) return 0;
-        throw_io(env, "waitpid failed");
-        return -2;
+        throw_io(env, "waitpid failed"); return -2;
     }
     if (WIFEXITED(status)) return WEXITSTATUS(status);
     if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
@@ -210,18 +195,14 @@ Java_com_forgemanager_app_features_terminal_PtyBridge_nativeWait(
 JNIEXPORT void JNICALL
 Java_com_forgemanager_app_features_terminal_PtyBridge_nativeSignal(
         JNIEnv *env, jobject thiz, jint pid, jint signal_number) {
-    (void) env;
-    (void) thiz;
+    (void) env; (void) thiz;
     if (pid <= 0) return;
-    if (kill(-(pid_t) pid, signal_number) != 0) {
-        (void) kill((pid_t) pid, signal_number);
-    }
+    if (kill(-(pid_t) pid, signal_number) != 0) (void) kill((pid_t) pid, signal_number);
 }
 
 JNIEXPORT void JNICALL
 Java_com_forgemanager_app_features_terminal_PtyBridge_nativeClose(
         JNIEnv *env, jobject thiz, jint fd) {
-    (void) env;
-    (void) thiz;
+    (void) env; (void) thiz;
     if (fd >= 0) close(fd);
 }
