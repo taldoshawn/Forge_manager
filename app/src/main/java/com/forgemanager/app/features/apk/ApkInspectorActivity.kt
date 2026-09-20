@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -35,13 +34,42 @@ class ApkInspectorActivity : Activity() {
 
     private fun buildUi(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        val bar = LinearLayout(this@ApkInspectorActivity).apply { gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(Color.rgb(42,42,42)) }
-        bar.addView(Button(this@ApkInspectorActivity).apply { text = "←"; setTextColor(Color.WHITE); setBackgroundColor(Color.TRANSPARENT); setOnClickListener { finish() } })
-        bar.addView(TextView(this@ApkInspectorActivity).apply { text = file.name; setTextColor(Color.WHITE); textSize = 18f }, LinearLayout.LayoutParams(0,-2,1f))
-        bar.addView(Button(this@ApkInspectorActivity).apply { text = "Instalar"; setTextColor(Color.WHITE); setBackgroundColor(Color.TRANSPARENT); setOnClickListener { install() } })
+        setBackgroundColor(Color.BLACK)
+        val bar = LinearLayout(this@ApkInspectorActivity).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.rgb(5, 8, 12))
+            setPadding(dp(4), 0, dp(4), 0)
+        }
+        bar.addView(button("←") { finish() })
+        bar.addView(TextView(this@ApkInspectorActivity).apply {
+            text = file.name
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            maxLines = 2
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        bar.addView(button("TOOLS") {
+            startActivity(Intent(this@ApkInspectorActivity, ApkToolsActivity::class.java).putExtra(ApkToolsActivity.EXTRA_PATH, file.path))
+        })
+        bar.addView(button("INST") { install() })
         addView(bar, LinearLayout.LayoutParams(-1, dp(54)))
-        output = TextView(this@ApkInspectorActivity).apply { setPadding(dp(14),dp(12),dp(14),dp(20)); setTextIsSelectable(true); textSize = 13f; setTextColor(Color.DKGRAY) }
-        addView(ScrollView(this@ApkInspectorActivity).apply { addView(output) }, LinearLayout.LayoutParams(-1,0,1f))
+        output = TextView(this@ApkInspectorActivity).apply {
+            setPadding(dp(14), dp(12), dp(14), dp(20))
+            setTextIsSelectable(true)
+            textSize = 13f
+            setTextColor(Color.rgb(220, 228, 238))
+        }
+        addView(ScrollView(this@ApkInspectorActivity).apply {
+            setBackgroundColor(Color.BLACK)
+            addView(output)
+        }, LinearLayout.LayoutParams(-1, 0, 1f))
+    }
+
+    private fun button(label: String, action: () -> Unit) = Button(this).apply {
+        text = label
+        setTextColor(Color.WHITE)
+        setBackgroundColor(Color.TRANSPARENT)
+        minWidth = dp(46)
+        setOnClickListener { action() }
     }
 
     @Suppress("DEPRECATION")
@@ -95,6 +123,8 @@ class ApkInspectorActivity : Activity() {
             appendLine("Bibliotecas nativas: ${libs.size}")
             libs.take(30).forEach { appendLine("• $it") }
         }}.onFailure { appendLine("Falha ao ler ZIP: ${it.message}") }
+        appendLine()
+        appendLine("Use TOOLS para Smali/DEX, AXML/ARSC, zipalign e assinatura APK v1/v2/v3/v4.")
     }
 
     private fun StringBuilder.appendSection(title: String, values: List<String>) {
