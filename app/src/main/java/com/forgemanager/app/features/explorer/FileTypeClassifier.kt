@@ -27,8 +27,9 @@ enum class FileKind {
 }
 
 object FileTypeClassifier {
-    private val archives = setOf("zip", "jar", "aar", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz", "zst", "epub")
-    private val images = setOf("png", "jpg", "jpeg", "jpe", "webp", "gif", "bmp", "wbmp", "heic", "heif", "avif", "svg", "ico", "tif", "tiff")
+    private val archives = setOf("zip", "jar", "aar", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz", "zst", "epub", "cab", "lz4")
+    private val diskImages = setOf("simg", "iso", "raw", "qcow", "qcow2", "vhd", "vhdx")
+    private val images = setOf("img", "png", "jpg", "jpeg", "jpe", "webp", "gif", "bmp", "wbmp", "heic", "heif", "avif", "svg", "ico", "tif", "tiff")
     private val videos = setOf("mp4", "mkv", "webm", "avi", "mov", "m4v", "3gp", "ts", "m2ts", "flv", "mpeg", "mpg")
     private val audio = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "amr", "mid", "midi", "aiff", "ape")
     private val scripts = setOf("sh", "bash", "zsh", "fish", "bat", "cmd", "ps1")
@@ -40,7 +41,7 @@ object FileTypeClassifier {
     )
     private val text = setOf("txt", "log", "csv", "ini", "cfg", "conf", "properties", "prop")
     private val documents = setOf("doc", "docx", "odt", "rtf", "pages")
-    private val xml = setOf("xml", "xsl", "xslt", "plist")
+    private val xml = setOf("xml", "xsl", "xslt", "plist", "axml")
     private val databases = setOf("db", "sqlite", "sqlite3", "realm", "mdb", "accdb")
     private val fonts = setOf("ttf", "otf", "woff", "woff2")
     private val spreadsheets = setOf("xls", "xlsx", "ods", "numbers")
@@ -78,6 +79,8 @@ object FileTypeClassifier {
         }
     }
 
+    fun isDiskImageName(name: String): Boolean = extensionOf(name) == "img" || extensionOf(name) in diskImages
+
     fun extensionOf(name: String): String {
         if (name.startsWith('.') && name.count { it == '.' } == 1) return ""
         return name.substringAfterLast('.', "").lowercase()
@@ -87,7 +90,7 @@ object FileTypeClassifier {
         FileKind.DIRECTORY -> "Pasta"
         FileKind.APK -> "Pacote Android"
         FileKind.ARCHIVE -> extensionOf(name).uppercase().ifBlank { "Compactado" }
-        FileKind.IMAGE -> extensionOf(name).uppercase().ifBlank { "Imagem" }
+        FileKind.IMAGE -> if (extensionOf(name) == "img") "IMG / imagem" else extensionOf(name).uppercase().ifBlank { "Imagem" }
         FileKind.VIDEO -> "Vídeo"
         FileKind.AUDIO -> "Áudio"
         FileKind.CODE -> extensionOf(name).uppercase().ifBlank { "Código" }
@@ -106,6 +109,6 @@ object FileTypeClassifier {
         FileKind.CONFIG -> extensionOf(name).uppercase().ifBlank { "Config" }
         FileKind.CERTIFICATE -> "Certificado"
         FileKind.EXECUTABLE -> "Binário"
-        FileKind.GENERIC -> extensionOf(name).uppercase().ifBlank { "Arquivo" }
+        FileKind.GENERIC -> if (isDiskImageName(name)) "Imagem de disco" else extensionOf(name).uppercase().ifBlank { "Arquivo" }
     }
 }
