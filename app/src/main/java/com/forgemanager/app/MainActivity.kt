@@ -31,12 +31,16 @@ import com.forgemanager.app.core.file.FileLocation
 import com.forgemanager.app.core.file.FileNode
 import com.forgemanager.app.core.file.FileOperations
 import com.forgemanager.app.core.file.OperationProgress
+import com.forgemanager.app.core.file.putFileLocation
 import com.forgemanager.app.archive.ZipOperations
 import com.forgemanager.app.features.apk.ApkInspectorActivity
 import com.forgemanager.app.features.apps.InstalledAppsActivity
 import com.forgemanager.app.features.compare.TextCompareActivity
 import com.forgemanager.app.features.editor.HexViewerActivity
 import com.forgemanager.app.features.editor.TextEditorActivity
+import com.forgemanager.app.features.editor.HtmlPreviewActivity
+import com.forgemanager.app.features.viewer.ImageViewerActivity
+import com.forgemanager.app.features.terminal.TerminalActivity
 import com.forgemanager.app.features.dex.DexInspectorActivity
 import com.forgemanager.app.features.explorer.DualPaneController
 import com.forgemanager.app.features.explorer.FileKind
@@ -96,7 +100,7 @@ class MainActivity : Activity() {
         bindToolbar()
         activate(PaneId.LEFT)
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
-        requestLegacyPermissionIfNeeded()
+        requestInitialStorageAccess()
         refreshBoth()
     }
 
@@ -110,6 +114,11 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::controller.isInitialized) refresh(controller.activePane)
+    }
+
+    @Deprecated("Android back compatibility")
+    override fun onBackPressed() {
+        handleBackNavigation()
     }
 
     @Deprecated("SAF compatibility")
@@ -214,7 +223,7 @@ class MainActivity : Activity() {
     private fun bindToolbar() {
         findViewById<View>(R.id.menuButton).setOnClickListener { showMainMenu(it) }
         findViewById<View>(R.id.moreButton).setOnClickListener { showMoreMenu(it) }
-        findViewById<View>(R.id.backButton).setOnClickListener { controller.back()?.let { refresh(controller.activePane) } }
+        findViewById<View>(R.id.backButton).setOnClickListener { handleBackNavigation() }
         findViewById<View>(R.id.backButton).setOnLongClickListener { showBookmarks(); true }
         findViewById<View>(R.id.forwardButton).setOnClickListener { controller.forward()?.let { refresh(controller.activePane) } }
         findViewById<View>(R.id.createButton).setOnClickListener { showCreateDialog() }
@@ -296,30 +305,58 @@ class MainActivity : Activity() {
         val extension = FileTypeClassifier.extensionOf(node.name)
         val kind = FileTypeClassifier.classify(node.name, false)
         val zipContainers = setOf("zip", "jar", "apk", "aar", "apks", "xapk", "apkm", "aab", "epub")
+
         if (node.location is FileLocation.Direct && extension in zipContainers) {
-            val path = node.location.path
+            val archivePath = node.location.path
             if (extension == "apk") {
                 AlertDialog.Builder(this).setTitle(node.name)
                     .setItems(arrayOf("Abrir como ZIP", "Informações do APK", "Abrir com…")) { _, which ->
                         when (which) {
-                            0 -> navigate(id, FileLocation.Archive(path))
-                            1 -> startActivity(Intent(this, ApkInspectorActivity::class.java).putExtra("path", path))
+                            0 -> navigate(id, FileLocation.Archive(archivePath))
+                            1 -> startActivity(Intent(this, ApkInspectorActivity::class.java).putExtra("path", archivePath))
                             2 -> openWith(node)
                         }
                     }.show()
-            } else navigate(id, FileLocation.Archive(path))
+            } else navigate(id, FileLocation.Archive(archivePath))
             return
         }
-        if (node.location is FileLocation.Direct) {
-            val path = node.location.path
-            when (kind) {
-                FileKind.CODE, FileKind.TEXT, FileKind.XML, FileKind.CONFIG ->
-                    startActivity(Intent(this, TextEditorActivity::class.java).putExtra("path", path))
-                FileKind.DEX -> startActivity(Intent(this, DexInspectorActivity::class.java).putExtra("path", path))
-                FileKind.IMAGE, FileKind.VIDEO, FileKind.AUDIO, FileKind.PDF -> openWith(node)
-                else -> startActivity(Intent(this, HexViewerActivity::class.java).putExtra("path", path))
+
+        when (kind) {
+            FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))
+            FileKind.CODE, FileKind.SCRIPT, FileKind.MARKDOWN, FileKind.TEXT, FileKind.XML, FileKind.CONFIG -> openTextEditor(node)
+            FileKind.WEB -> {
+                if (extension in setOf("html", "htm", "xhtml")) {
+                    AlertDialog.Builder(this).setTitle(node.name)
+                        .setItems(arrayOf("Visualizar página", "Editar código", "Abrir com…")) { _, which ->
+                            when (which) {
+                                0 -> startActivity(Intent(this, HtmlPreviewActivity::class.java).putFileLocation(node.location, node.name))
+                                1 -> openTextEditor(node)
+                                2 -> openWith(node)
+                            }
+                        }.show()
+                } else openTextEditor(node)
             }
-        } else toast("Use Copiar para extrair este item ao outro painel")
+            FileKind.DEX -> {
+                val direct = node.location as? FileLocation.Direct
+                if (direct != null) startActivity(Intent(this, DexInspectorActivity::class.java).putExtra("path", direct.path))
+                else openHexEditor(node)
+            }
+            FileKind.VIDEO, FileKind.AUDIO, FileKind.PDF, FileKind.DOCUMENT, FileKind.SPREADSHEET,
+            FileKind.PRESENTATION, FileKind.FONT, FileKind.CERTIFICATE -> openWith(node)
+            FileKind.EXECUTABLE, FileKind.DATABASE -> openHexEditor(node)
+            FileKind.APK, FileKind.ARCHIVE -> openWith(node)
+            FileKind.GENERIC -> {
+                AlertDialog.Builder(this).setTitle(node.name)
+                    .setItems(arrayOf("Editar como texto", "Editor hexadecimal", "Abrir com…")) { _, which ->
+                        when (which) {
+                            0 -> openTextEditor(node)
+                            1 -> openHexEditor(node)
+                            2 -> openWith(node)
+                        }
+                    }.show()
+            }
+            FileKind.DIRECTORY -> Unit
+        }
     }
 
     private fun showSelectionActions(reference: FileNode) {
@@ -337,6 +374,9 @@ class MainActivity : Activity() {
             "Copiar caminho",
             "Compartilhar",
             "Abrir com",
+            "Visualizar",
+            "Editar como texto/código",
+            "Editor hexadecimal",
             "Selecionar todos",
             "Inverter seleção",
             "Selecionar mesmo tipo",
@@ -369,12 +409,63 @@ class MainActivity : Activity() {
                 "Copiar caminho" -> copyToClipboard("Caminhos", items.joinToString("\n") { it.location.displayPath })
                 "Compartilhar" -> share(items)
                 "Abrir com" -> openWith(items.singleOrNull())
+                "Visualizar" -> items.singleOrNull()?.let(::openInternalViewer) ?: toast("Selecione um arquivo")
+                "Editar como texto/código" -> items.singleOrNull()?.let(::openTextEditor) ?: toast("Selecione um arquivo")
+                "Editor hexadecimal" -> items.singleOrNull()?.let(::openHexEditor) ?: toast("Selecione um arquivo")
                 "Selecionar todos" -> { controller.selectAll(); ui(controller.activePane).adapter.notifyDataSetChanged(); updateHeader() }
                 "Inverter seleção" -> { controller.invertSelection(); ui(controller.activePane).adapter.notifyDataSetChanged(); updateHeader() }
                 "Selecionar mesmo tipo" -> { controller.selectSameType(reference); ui(controller.activePane).adapter.notifyDataSetChanged(); updateHeader() }
                 "Cancelar seleção" -> { state.selection.clear(); ui(controller.activePane).adapter.notifyDataSetChanged(); updateHeader() }
             }
         }.show()
+    }
+
+    private fun openTextEditor(node: FileNode) {
+        startActivity(Intent(this, TextEditorActivity::class.java).putFileLocation(node.location, node.name))
+    }
+
+    private fun openHexEditor(node: FileNode) {
+        startActivity(Intent(this, HexViewerActivity::class.java).putFileLocation(node.location, node.name))
+    }
+
+    private fun openInternalViewer(node: FileNode) {
+        when (FileTypeClassifier.classify(node.name, node.isDirectory)) {
+            FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))
+            FileKind.WEB -> {
+                val ext = FileTypeClassifier.extensionOf(node.name)
+                if (ext in setOf("html", "htm", "xhtml")) startActivity(Intent(this, HtmlPreviewActivity::class.java).putFileLocation(node.location, node.name))
+                else openTextEditor(node)
+            }
+            FileKind.CODE, FileKind.SCRIPT, FileKind.MARKDOWN, FileKind.TEXT, FileKind.XML, FileKind.CONFIG -> openTextEditor(node)
+            FileKind.DEX, FileKind.DATABASE, FileKind.EXECUTABLE -> openHexEditor(node)
+            else -> openWith(node)
+        }
+    }
+
+    private fun handleBackNavigation() {
+        if (!::controller.isInitialized) return
+        val id = controller.activePane
+        val state = controller.pane(id)
+        if (state.selection.isNotEmpty()) {
+            state.selection.clear()
+            ui(id).adapter.notifyDataSetChanged()
+            updateHeader()
+            return
+        }
+        if (controller.back(id) != null) {
+            refresh(id)
+            return
+        }
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { graph.resolver.backendFor(state.current).parent(state.current) } }
+                .onSuccess { parent ->
+                    if (parent != null) {
+                        controller.navigate(id, parent, recordHistory = false)
+                        refresh(id)
+                    } else toast("Você já está na raiz")
+                }
+                .onFailure(::showError)
+        }
     }
 
     private fun compareText(items: List<FileNode>) {
@@ -637,12 +728,33 @@ class MainActivity : Activity() {
     }
 
     private fun openWith(item: FileNode?) {
-        val file = (item?.location as? FileLocation.Direct)?.path?.let(::File)
-        if (file == null || !file.isFile) { toast("Selecione exatamente um arquivo local"); return }
-        val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
-        val mime = java.net.URLConnection.guessContentTypeFromName(file.name) ?: "application/octet-stream"
-        runCatching { startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Abrir com")) }.onFailure { toast("Nenhum aplicativo compatível") }
+        if (item == null || item.isDirectory) { toast("Selecione exatamente um arquivo"); return }
+        scope.launch {
+            val result = runCatching { withContext(Dispatchers.IO) { materializeForExternalOpen(item) } }
+            result.onSuccess { file ->
+                val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.files", file)
+                val mime = item.mimeType ?: java.net.URLConnection.guessContentTypeFromName(item.name) ?: "application/octet-stream"
+                runCatching {
+                    startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Abrir com"))
+                }.onFailure { toast("Nenhum aplicativo compatível") }
+            }.onFailure(::showError)
+        }
+    }
+
+    private suspend fun materializeForExternalOpen(item: FileNode): File {
+        val direct = (item.location as? FileLocation.Direct)?.path?.let(::File)
+        if (direct != null && direct.isFile && direct.canRead()) return direct
+        val backend = graph.resolver.backendFor(item.location)
+        val node = backend.stat(item.location)
+        if (node.size > 512L * 1024 * 1024) throw FileAccessException("Arquivo grande demais para abrir por cópia temporária")
+        val dir = File(cacheDir, "opened-files").apply { mkdirs() }
+        val safeName = item.name.replace(Regex("[^A-Za-z0-9._() -]"), "_").take(160).ifBlank { "arquivo.bin" }
+        val target = File(dir, "${System.nanoTime()}-$safeName")
+        backend.openInput(item.location).use { input ->
+            target.outputStream().buffered(128 * 1024).use { output -> input.copyTo(output, 128 * 1024) }
+        }
+        return target
     }
 
     private fun showMainMenu(anchor: View) {
@@ -655,6 +767,7 @@ class MainActivity : Activity() {
             menu.add("Autorizar pasta (SAF)")
             menu.add("Acesso a todos os arquivos")
             menu.add("Aplicativos instalados")
+            menu.add("Terminal")
             menu.add("Adicionar bookmark")
             menu.add("Bookmarks")
             menu.add(graph.shizuku.status())
@@ -669,6 +782,10 @@ class MainActivity : Activity() {
                     it.title == "Autorizar pasta (SAF)" -> requestSafTree()
                     it.title == "Acesso a todos os arquivos" -> requestAllFilesAccess()
                     it.title == "Aplicativos instalados" -> startActivity(Intent(this@MainActivity, InstalledAppsActivity::class.java))
+                    it.title == "Terminal" -> {
+                        val working = (controller.pane().current as? FileLocation.Direct)?.path ?: Environment.getExternalStorageDirectory().path
+                        startActivity(Intent(this@MainActivity, TerminalActivity::class.java).putExtra(TerminalActivity.EXTRA_WORKING_DIRECTORY, working))
+                    }
                     it.title == "Adicionar bookmark" -> addBookmark()
                     it.title == "Bookmarks" -> showBookmarks()
                     it.title.toString().startsWith("Shizuku") -> requestShizuku()
@@ -843,6 +960,13 @@ class MainActivity : Activity() {
             else -> null
         }
     }.getOrNull()
+
+    private fun requestInitialStorageAccess() {
+        requestLegacyPermissionIfNeeded()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            window.decorView.post { requestAllFilesAccess() }
+        }
+    }
 
     private fun requestLegacyPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {

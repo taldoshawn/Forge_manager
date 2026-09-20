@@ -61,14 +61,14 @@ object SyntaxHighlighter {
         hexColor.findAll(editable).forEach { match ->
             parseHexColor(match.value)?.let { color ->
                 val foreground = if (luminance(color) > 0.55) Color.rgb(20, 23, 28) else Color.WHITE
-                editable.setSpan(SyntaxSpan(fg = foreground, bg = color, bold = true), match.range.first, match.range.last + 1, Editable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                editable.setSpan(SyntaxSpan(fg = foreground, bg = color, bold = true), match.range.first, match.range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         }
     }
 
     private fun paint(editable: Editable, regex: Regex, fg: Int, bold: Boolean = false) {
         regex.findAll(editable).forEach { match ->
-            editable.setSpan(SyntaxSpan(fg = fg, bold = bold), match.range.first, match.range.last + 1, Editable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            editable.setSpan(SyntaxSpan(fg = fg, bold = bold), match.range.first, match.range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
 
