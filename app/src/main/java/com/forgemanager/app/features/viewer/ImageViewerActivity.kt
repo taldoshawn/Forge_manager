@@ -2,6 +2,7 @@ package com.forgemanager.app.features.viewer
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.ImageDecoder
@@ -18,6 +19,7 @@ import android.widget.TextView
 import com.forgemanager.app.ForgeApplication
 import com.forgemanager.app.core.file.FileLocation
 import com.forgemanager.app.core.file.fileDisplayName
+import com.forgemanager.app.core.file.putFileLocation
 import com.forgemanager.app.core.file.readFileLocation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,28 +53,34 @@ class ImageViewerActivity : Activity() {
 
     private fun buildUi(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setBackgroundColor(Color.rgb(12, 14, 18))
+        setBackgroundColor(Color.BLACK)
         val bar = LinearLayout(this@ImageViewerActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), 0, dp(8), 0)
-            setBackgroundColor(Color.rgb(31, 35, 43))
+            setPadding(dp(4), 0, dp(6), 0)
+            setBackgroundColor(Color.rgb(5, 8, 12))
         }
-        bar.addView(Button(this@ImageViewerActivity).apply {
-            text = "←"
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener { finish() }
-        })
+        bar.addView(button("←") { finish() })
         status = TextView(this@ImageViewerActivity).apply {
             text = name
             maxLines = 2
             setTextColor(Color.WHITE)
         }
         bar.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
+        if (name.substringAfterLast('.', "").equals("img", true)) {
+            bar.addView(button("DISK") { openAsDiskImage() })
+        }
         addView(bar, LinearLayout.LayoutParams(-1, dp(54)))
-        content = FrameLayout(this@ImageViewerActivity).apply { setBackgroundColor(Color.rgb(12, 14, 18)) }
+        content = FrameLayout(this@ImageViewerActivity).apply { setBackgroundColor(Color.BLACK) }
         addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+    }
+
+    private fun button(label: String, action: () -> Unit) = Button(this).apply {
+        text = label
+        setTextColor(Color.WHITE)
+        setBackgroundColor(Color.TRANSPARENT)
+        minWidth = dp(44)
+        setOnClickListener { action() }
     }
 
     private fun load() {
@@ -97,7 +105,10 @@ class ImageViewerActivity : Activity() {
                         out.toByteArray()
                     }
                 }
-            }.onSuccess(::render).onFailure { showError(it.message ?: "Falha ao abrir imagem") }
+            }.onSuccess(::render).onFailure { error ->
+                if (name.substringAfterLast('.', "").equals("img", true)) showImgChoice(error.message ?: "IMG não é uma imagem gráfica")
+                else showError(error.message ?: "Falha ao abrir imagem")
+            }
         }
     }
 
@@ -119,7 +130,7 @@ class ImageViewerActivity : Activity() {
         }
 
         val view = ImageView(this).apply {
-            setBackgroundColor(Color.rgb(12, 14, 18))
+            setBackgroundColor(Color.BLACK)
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
         }
@@ -131,11 +142,28 @@ class ImageViewerActivity : Activity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && drawable is AnimatedImageDrawable) drawable.start()
         } else {
             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                ?: run { showError("Formato de imagem não suportado pelo Android deste aparelho"); return }
+            if (bitmap == null) {
+                if (ext == "img") showImgChoice("O conteúdo não foi reconhecido por um decoder gráfico do Android.")
+                else showError("Formato de imagem não suportado pelo Android deste aparelho")
+                return
+            }
             view.setImageBitmap(bitmap)
         }
         content.addView(view, FrameLayout.LayoutParams(-1, -1))
         status.text = "$name  •  ${bytes.size / 1024} KB"
+    }
+
+    private fun showImgChoice(message: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Arquivo IMG")
+            .setMessage("$message\n\nArquivos .img também podem ser imagens de disco Android/Linux.")
+            .setPositiveButton("Analisar como disco") { _, _ -> openAsDiskImage() }
+            .setNegativeButton("Fechar") { _, _ -> finish() }
+            .show()
+    }
+
+    private fun openAsDiskImage() {
+        startActivity(Intent(this, DiskImageActivity::class.java).putFileLocation(location, name))
     }
 
     private fun showError(message: String) = AlertDialog.Builder(this)
