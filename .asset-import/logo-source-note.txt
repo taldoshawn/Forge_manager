@@ -1,1 +1,0 @@
-Official launcher source is the user-provided 1000057150.png, preserved whole with its original background. Do not crop, remove background, redraw, vectorize, recolor, or replace it.
