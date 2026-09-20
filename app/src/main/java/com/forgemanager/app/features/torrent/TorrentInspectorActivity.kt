@@ -56,7 +56,7 @@ class TorrentInspectorActivity : Activity() {
         }
     }
 
-    private fun load(location: FileLocation): String {
+    private suspend fun load(location: FileLocation): String {
         val backend = graph.resolver.backendFor(location)
         val stat = backend.stat(location)
         require(stat.size in 1..MAX_BYTES) { "Torrent grande demais para inspeção" }
@@ -94,7 +94,7 @@ class TorrentInspectorActivity : Activity() {
                 append("\nArquivos (${files.size}):\n")
                 files.take(500).forEach { entry ->
                     val map = entry as? Map<*, *> ?: return@forEach
-                    val path = (map["path.utf-8"] ?: map["path"] as? List<*>)
+                    val path = map["path.utf-8"] ?: map["path"]
                     val pathText = when (path) {
                         is List<*> -> path.joinToString("/") { it?.toString().orEmpty() }
                         else -> "?"
