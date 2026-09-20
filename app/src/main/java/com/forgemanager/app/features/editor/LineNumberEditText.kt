@@ -1,5 +1,6 @@
 package com.forgemanager.app.features.editor
 
+import android.app.Activity
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -13,6 +14,7 @@ class LineNumberEditText @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : EditText(context, attrs) {
     var onSelectionChangedListener: ((start: Int, end: Int) -> Unit)? = null
+    private var requestedLineConsumed = false
 
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(100, 116, 139)
@@ -51,6 +53,11 @@ class LineNumberEditText @JvmOverloads constructor(
         invalidate()
     }
 
+    override fun onTextChanged(text: CharSequence?, start: Int, lengthBefore: Int, lengthAfter: Int) {
+        super.onTextChanged(text, start, lengthBefore, lengthAfter)
+        if (!requestedLineConsumed && !text.isNullOrEmpty()) post(::consumeRequestedLine)
+    }
+
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
         super.onSelectionChanged(selStart, selEnd)
         onSelectionChangedListener?.invoke(selStart, selEnd)
@@ -71,5 +78,32 @@ class LineNumberEditText @JvmOverloads constructor(
         super.onDraw(canvas)
     }
 
+    private fun consumeRequestedLine() {
+        if (requestedLineConsumed) return
+        val activity = context as? Activity ?: return
+        val requested = activity.intent?.getIntExtra(EXTRA_REQUESTED_LINE, -1) ?: -1
+        if (requested <= 0) {
+            requestedLineConsumed = true
+            return
+        }
+        val content = text ?: return
+        var currentLine = 1
+        var offset = 0
+        while (currentLine < requested && offset < content.length) {
+            if (content[offset] == '\n') currentLine++
+            offset++
+        }
+        if (currentLine == requested) {
+            setSelection(offset.coerceIn(0, content.length))
+            requestFocus()
+            bringPointIntoView(offset)
+        }
+        requestedLineConsumed = true
+    }
+
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        const val EXTRA_REQUESTED_LINE = "requested_line"
+    }
 }
