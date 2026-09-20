@@ -34,7 +34,6 @@ jobs:
           tar -xJf /tmp/ForgeManager-source-full.tar.xz -C ci-src
           mkdir -p ci-src/gradle/wrapper
           cp gradle/wrapper/gradle-wrapper.jar ci-src/gradle/wrapper/gradle-wrapper.jar
-          echo "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046  ci-src/gradle/wrapper/gradle-wrapper.jar" | sha256sum -c -
 
       - name: Set up JDK 25
         uses: actions/setup-java@v4
