@@ -53,7 +53,7 @@ class HtmlPreviewActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), 0, dp(8), 0)
-            setBackgroundColor(Color.rgb(31, 35, 43))
+            setBackgroundColor(Color.rgb(5, 5, 5))
         }
         bar.addView(Button(this@HtmlPreviewActivity).apply {
             text = "←"

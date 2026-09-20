@@ -51,12 +51,12 @@ class ImageViewerActivity : Activity() {
 
     private fun buildUi(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setBackgroundColor(Color.rgb(12, 14, 18))
+        setBackgroundColor(Color.BLACK)
         val bar = LinearLayout(this@ImageViewerActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), 0, dp(8), 0)
-            setBackgroundColor(Color.rgb(31, 35, 43))
+            setBackgroundColor(Color.rgb(5, 5, 5))
         }
         bar.addView(Button(this@ImageViewerActivity).apply {
             text = "←"
@@ -71,7 +71,7 @@ class ImageViewerActivity : Activity() {
         }
         bar.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
         addView(bar, LinearLayout.LayoutParams(-1, dp(54)))
-        content = FrameLayout(this@ImageViewerActivity).apply { setBackgroundColor(Color.rgb(12, 14, 18)) }
+        content = FrameLayout(this@ImageViewerActivity).apply { setBackgroundColor(Color.BLACK) }
         addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
@@ -119,7 +119,7 @@ class ImageViewerActivity : Activity() {
         }
 
         val view = ImageView(this).apply {
-            setBackgroundColor(Color.rgb(12, 14, 18))
+            setBackgroundColor(Color.BLACK)
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
         }

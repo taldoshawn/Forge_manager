@@ -86,13 +86,13 @@ class TextEditorActivity : Activity() {
     private fun buildUi(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(15, 18, 24))
+            setBackgroundColor(Color.BLACK)
         }
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(2), dp(4), dp(2))
-            setBackgroundColor(Color.rgb(31, 35, 43))
+            setBackgroundColor(Color.rgb(5, 5, 5))
         }
         fun button(label: String, description: String, action: () -> Unit) = Button(this).apply {
             text = label
@@ -122,7 +122,7 @@ class TextEditorActivity : Activity() {
         editor = LineNumberEditText(this).apply {
             setTextColor(Color.rgb(226, 232, 240))
             setHintTextColor(Color.rgb(100, 116, 139))
-            setBackgroundColor(Color.rgb(15, 18, 24))
+            setBackgroundColor(Color.BLACK)
             setSelectAllOnFocus(false)
         }
         editor.addTextChangedListener(object : TextWatcher {

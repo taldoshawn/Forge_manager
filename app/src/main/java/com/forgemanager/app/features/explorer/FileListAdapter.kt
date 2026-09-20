@@ -35,7 +35,11 @@ class FileListAdapter(
         val holder: Holder
         val view = if (convertView == null) {
             inflater.inflate(R.layout.item_file, parent, false).also {
-                holder = Holder(it.findViewById(R.id.icon), it.findViewById(R.id.name), it.findViewById(R.id.details))
+                holder = Holder(
+                    it.findViewById(R.id.icon),
+                    it.findViewById(R.id.name),
+                    it.findViewById(R.id.details)
+                )
                 it.tag = holder
             }
         } else {
@@ -45,77 +49,75 @@ class FileListAdapter(
 
         val item = getItem(position)
         val kind = FileTypeClassifier.classify(item.name, item.isDirectory)
+        val icon = iconFor(kind, item.name)
+
         holder.name.text = item.name
-        holder.icon.setImageResource(iconFor(kind))
-        holder.icon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, colorFor(kind)))
+        holder.icon.setImageResource(icon.res)
+        holder.icon.imageTintList = icon.tintColor?.let { color ->
+            ColorStateList.valueOf(ContextCompat.getColor(context, color))
+        }
         holder.icon.contentDescription = FileTypeClassifier.shortLabel(kind, item.name)
-        holder.icon.alpha = if (item.isDirectory) 1f else 0.94f
+        holder.icon.alpha = 1f
 
         val date = if (item.modified > 0) {
-            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(item.modified))
-        } else ""
+            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                .format(Date(item.modified))
+        } else {
+            ""
+        }
         val type = FileTypeClassifier.shortLabel(kind, item.name)
         holder.details.text = if (item.isDirectory) {
-            listOf(type, date).filter { it.isNotBlank() }.joinToString("  •  ")
+            listOf(type, date).filter(String::isNotBlank).joinToString("  •  ")
         } else {
-            listOf(type, formatBytes(item.size), date).filter { it.isNotBlank() }.joinToString("  •  ")
+            listOf(type, formatBytes(item.size), date)
+                .filter(String::isNotBlank)
+                .joinToString("  •  ")
         }
-        view.setBackgroundResource(if (selected(item)) R.drawable.bg_file_item_selected else R.drawable.bg_file_item)
+
+        view.setBackgroundResource(
+            if (selected(item)) R.drawable.bg_file_item_selected else R.drawable.bg_file_item
+        )
         return view
     }
 
-    private fun iconFor(kind: FileKind): Int = when (kind) {
-        FileKind.DIRECTORY -> R.drawable.ic_file_folder
-        FileKind.APK -> R.drawable.ic_file_apk
-        FileKind.ARCHIVE -> R.drawable.ic_file_archive
-        FileKind.IMAGE -> R.drawable.ic_file_image
-        FileKind.VIDEO -> R.drawable.ic_file_video
-        FileKind.AUDIO -> R.drawable.ic_file_audio
-        FileKind.CODE -> R.drawable.ic_file_code
-        FileKind.SCRIPT -> R.drawable.ic_file_script
-        FileKind.WEB -> R.drawable.ic_file_web
-        FileKind.MARKDOWN -> R.drawable.ic_file_markdown
-        FileKind.TEXT -> R.drawable.ic_file_text
-        FileKind.DOCUMENT -> R.drawable.ic_file_document
-        FileKind.PDF -> R.drawable.ic_file_pdf
-        FileKind.DEX -> R.drawable.ic_file_dex
-        FileKind.XML -> R.drawable.ic_file_xml
-        FileKind.DATABASE -> R.drawable.ic_file_database
-        FileKind.FONT -> R.drawable.ic_file_font
-        FileKind.SPREADSHEET -> R.drawable.ic_file_sheet
-        FileKind.PRESENTATION -> R.drawable.ic_file_presentation
-        FileKind.CONFIG -> R.drawable.ic_file_config
-        FileKind.CERTIFICATE -> R.drawable.ic_file_certificate
-        FileKind.EXECUTABLE -> R.drawable.ic_file_executable
-        FileKind.GENERIC -> R.drawable.ic_file_generic
+    private fun iconFor(kind: FileKind, name: String): IconSpec {
+        val extension = FileTypeClassifier.extensionOf(name)
+        return when (kind) {
+            FileKind.DIRECTORY -> IconSpec(R.drawable.fm_icon_folder)
+            FileKind.IMAGE -> IconSpec(
+                if (extension == "svg") R.drawable.fm_icon_svg else R.drawable.fm_icon_image
+            )
+            FileKind.ARCHIVE -> IconSpec(
+                if (extension == "rar") R.drawable.fm_icon_rar else R.drawable.fm_icon_zip
+            )
+            FileKind.AUDIO -> IconSpec(R.drawable.ic_file_audio, R.color.fm_audio)
+            FileKind.VIDEO -> IconSpec(R.drawable.ic_file_video, R.color.fm_video)
+            FileKind.PDF -> IconSpec(R.drawable.fm_icon_pdf)
+            FileKind.CODE, FileKind.SCRIPT, FileKind.WEB, FileKind.XML ->
+                IconSpec(R.drawable.fm_icon_code)
+            FileKind.TEXT, FileKind.MARKDOWN, FileKind.DOCUMENT, FileKind.CONFIG ->
+                IconSpec(R.drawable.fm_icon_text)
+            FileKind.APK -> IconSpec(R.drawable.ic_file_apk, R.color.fm_apk)
+            FileKind.DEX -> IconSpec(R.drawable.ic_file_dex, R.color.fm_dex)
+            FileKind.BINARY_RESOURCE -> IconSpec(R.drawable.ic_file_xml, R.color.fm_resource)
+            FileKind.DISK_IMAGE -> IconSpec(R.drawable.ic_file_executable, R.color.fm_disk_image)
+            FileKind.DATABASE -> IconSpec(R.drawable.ic_file_database, R.color.fm_database)
+            FileKind.FONT -> IconSpec(R.drawable.ic_file_font, R.color.fm_font)
+            FileKind.SPREADSHEET -> IconSpec(R.drawable.ic_file_sheet, R.color.fm_sheet)
+            FileKind.PRESENTATION -> IconSpec(
+                R.drawable.ic_file_presentation,
+                R.color.fm_presentation
+            )
+            FileKind.CERTIFICATE -> IconSpec(
+                R.drawable.ic_file_certificate,
+                R.color.fm_certificate
+            )
+            FileKind.EXECUTABLE -> IconSpec(R.drawable.ic_file_executable, R.color.fm_executable)
+            FileKind.GENERIC -> IconSpec(R.drawable.ic_file_generic, R.color.fm_text_file)
+        }
     }
 
-    private fun colorFor(kind: FileKind): Int = when (kind) {
-        FileKind.DIRECTORY -> R.color.fm_folder
-        FileKind.APK -> R.color.fm_apk
-        FileKind.ARCHIVE -> R.color.fm_archive
-        FileKind.IMAGE -> R.color.fm_image
-        FileKind.VIDEO -> R.color.fm_video
-        FileKind.AUDIO -> R.color.fm_audio
-        FileKind.CODE -> R.color.fm_code
-        FileKind.SCRIPT -> R.color.fm_script
-        FileKind.WEB -> R.color.fm_web
-        FileKind.MARKDOWN -> R.color.fm_markdown
-        FileKind.TEXT -> R.color.fm_text_file
-        FileKind.DOCUMENT -> R.color.fm_document
-        FileKind.PDF -> R.color.fm_pdf
-        FileKind.DEX -> R.color.fm_dex
-        FileKind.XML -> R.color.fm_xml
-        FileKind.DATABASE -> R.color.fm_database
-        FileKind.FONT -> R.color.fm_font
-        FileKind.SPREADSHEET -> R.color.fm_sheet
-        FileKind.PRESENTATION -> R.color.fm_presentation
-        FileKind.CONFIG -> R.color.fm_config
-        FileKind.CERTIFICATE -> R.color.fm_certificate
-        FileKind.EXECUTABLE -> R.color.fm_executable
-        FileKind.GENERIC -> R.color.fm_text_file
-    }
-
+    private data class IconSpec(val res: Int, val tintColor: Int? = null)
     private data class Holder(val icon: ImageView, val name: TextView, val details: TextView)
 
     companion object {

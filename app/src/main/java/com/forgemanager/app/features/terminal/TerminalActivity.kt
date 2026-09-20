@@ -3,18 +3,18 @@ package com.forgemanager.app.features.terminal
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
-import android.graphics.Typeface
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.forgemanager.app.ForgeApplication
-import com.forgemanager.app.core.shell.ShellEscaper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,234 +26,156 @@ import java.io.File
 class TerminalActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val graph by lazy { (application as ForgeApplication).graph }
-    private lateinit var output: TextView
-    private lateinit var scroll: ScrollView
-    private lateinit var input: EditText
-    private lateinit var modeButton: Button
-    private var cwd: File = File("/storage/emulated/0")
+    private lateinit var terminal: PtyTerminalView
+    private lateinit var keyboard: EditText
+    private lateinit var modeLabel: TextView
+    private var session: PtySession? = null
     private var rootMode = false
-    private var currentProcess: Process? = null
-    private val history = ArrayList<String>()
-    private var historyIndex = 0
+    private var cwd: File = File("/storage/emulated/0")
+    private var mutatingKeyboard = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        intent.getStringExtra(EXTRA_WORKING_DIRECTORY)?.let { requested ->
-            val candidate = File(requested)
-            if (candidate.isDirectory) cwd = candidate
-        }
+        intent.getStringExtra(EXTRA_WORKING_DIRECTORY)?.let { File(it).takeIf(File::isDirectory)?.let { dir -> cwd = dir } }
         setContentView(buildUi())
-        printBanner()
+        terminal.post { startSession(false) }
     }
 
     override fun onDestroy() {
-        currentProcess?.destroy()
+        session?.close()
+        session = null
         scope.cancel()
         super.onDestroy()
     }
 
     private fun buildUi(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setBackgroundColor(Color.rgb(9, 12, 16))
-
-        val bar = LinearLayout(this@TerminalActivity).apply {
+        setBackgroundColor(Color.BLACK)
+        val top = LinearLayout(this@TerminalActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.rgb(24, 29, 36))
-            setPadding(dp(4), 0, dp(4), 0)
+            setBackgroundColor(Color.BLACK)
         }
-        bar.addView(button("←") { finish() })
-        bar.addView(TextView(this@TerminalActivity).apply {
-            text = "Terminal"
-            textSize = 16f
+        top.addView(button("←") { finish() })
+        modeLabel = TextView(this@TerminalActivity).apply {
+            text = "Forge PTY • APP"
             setTextColor(Color.WHITE)
-            setPadding(dp(6), 0, 0, 0)
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        modeButton = button("APP") { toggleMode() }
-        bar.addView(modeButton)
-        bar.addView(button("■") { stopProcess() })
-        bar.addView(button("CLR") { output.text = "" })
-        addView(bar, LinearLayout.LayoutParams(-1, dp(52)))
-
-        output = TextView(this@TerminalActivity).apply {
-            typeface = Typeface.MONOSPACE
-            textSize = 13f
-            setTextColor(Color.rgb(205, 214, 224))
-            setTextIsSelectable(true)
-            setPadding(dp(10), dp(10), dp(10), dp(10))
+            textSize = 15f
+            setPadding(dp(8), 0, dp(8), 0)
         }
-        scroll = ScrollView(this@TerminalActivity).apply {
-            isFillViewport = true
-            addView(output, android.widget.FrameLayout.LayoutParams(-1, -2))
-        }
-        addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        top.addView(modeLabel, LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(button("ROOT") { toggleRoot() })
+        top.addView(button("CLR") { terminal.clearTerminal() })
+        addView(top, LinearLayout.LayoutParams(-1, dp(52)))
 
-        val commandBar = LinearLayout(this@TerminalActivity).apply {
+        terminal = PtyTerminalView(this@TerminalActivity).apply {
+            onTerminalResize = { rows, cols -> session?.resize(rows, cols) }
+        }
+        addView(terminal, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val extra = LinearLayout(this@TerminalActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.rgb(17, 22, 28))
-            setPadding(dp(6), dp(5), dp(6), dp(5))
+            setBackgroundColor(Color.rgb(4, 4, 4))
         }
-        commandBar.addView(button("↑") { historyUp() })
-        commandBar.addView(button("↓") { historyDown() })
-        input = EditText(this@TerminalActivity).apply {
+        fun key(label: String, value: String) = Button(this@TerminalActivity).apply {
+            text = label; textSize = 10f; setTextColor(Color.WHITE); setBackgroundColor(Color.TRANSPARENT)
+            setOnClickListener { session?.send(value); focusKeyboard() }
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f)
+        }
+        extra.addView(key("ESC", "\u001b"))
+        extra.addView(key("TAB", "\t"))
+        extra.addView(key("CTRL-C", "\u0003"))
+        extra.addView(key("CTRL-D", "\u0004"))
+        extra.addView(key("↑", "\u001b[A"))
+        extra.addView(key("↓", "\u001b[B"))
+        extra.addView(key("←", "\u001b[D"))
+        extra.addView(key("→", "\u001b[C"))
+        addView(extra, LinearLayout.LayoutParams(-1, dp(44)))
+
+        keyboard = EditText(this@TerminalActivity).apply {
             setSingleLine(true)
-            typeface = Typeface.MONOSPACE
+            hint = "Teclado PTY — toque e digite"
             setTextColor(Color.WHITE)
-            setHintTextColor(Color.rgb(100, 116, 139))
-            hint = "comando"
-            imeOptions = EditorInfo.IME_ACTION_GO
-            setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_GO) { execute(); true } else false
+            setHintTextColor(Color.rgb(100, 100, 100))
+            setBackgroundColor(Color.rgb(10, 10, 10))
+            setPadding(dp(12), 0, dp(12), 0)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                override fun afterTextChanged(s: Editable?) {
+                    if (mutatingKeyboard || s.isNullOrEmpty()) return
+                    val value = s.toString()
+                    session?.send(value)
+                    mutatingKeyboard = true
+                    setText("")
+                    mutatingKeyboard = false
+                }
+            })
+            setOnEditorActionListener { _, _, _ -> session?.send("\r"); true }
+            setOnKeyListener { _, keyCode, event ->
+                if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                when (keyCode) {
+                    KeyEvent.KEYCODE_ENTER -> { session?.send("\r"); true }
+                    KeyEvent.KEYCODE_DEL -> { session?.send("\u007f"); true }
+                    else -> false
+                }
             }
         }
-        commandBar.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
-        commandBar.addView(button("RUN") { execute() })
-        addView(commandBar, LinearLayout.LayoutParams(-1, dp(58)))
+        addView(keyboard, LinearLayout.LayoutParams(-1, dp(52)))
     }
 
-    private fun button(label: String, action: () -> Unit) = Button(this).apply {
-        text = label
-        setTextColor(Color.WHITE)
-        setBackgroundColor(Color.TRANSPARENT)
-        minWidth = dp(44)
-        setOnClickListener { action() }
+    private fun startSession(asRoot: Boolean) {
+        session?.close()
+        session = null
+        terminal.clearTerminal()
+        val executable = if (asRoot) findSu() else "/system/bin/sh"
+        runCatching {
+            PtySession(
+                executable = executable,
+                cwd = cwd.path,
+                rows = terminal.rows(),
+                cols = terminal.cols(),
+                onOutput = { chunk -> runOnUiThread { terminal.write(chunk) } },
+                onExit = { code -> runOnUiThread {
+                    terminal.write("\r\n[PTY encerrada: $code]\r\n")
+                    modeLabel.text = "Forge PTY • encerrada"
+                }}
+            )
+        }.onSuccess {
+            session = it
+            rootMode = asRoot
+            modeLabel.text = "Forge PTY • ${if (rootMode) "ROOT" else "APP"}"
+            focusKeyboard()
+        }.onFailure {
+            AlertDialog.Builder(this).setTitle("Terminal PTY").setMessage(it.message ?: "Falha ao iniciar PTY").setPositiveButton("OK", null).show()
+        }
     }
 
-    private fun printBanner() {
-        append("Forge Terminal\n")
-        append("Shell Android: /system/bin/sh • diretório: ${cwd.path}\n")
-        append("Modo APP executa com as permissões do Forge Manager. ROOT exige autorização explícita.\n\n")
-        appendPrompt()
-    }
-
-    private fun execute() {
-        val command = input.text.toString().trim()
-        if (command.isEmpty() || currentProcess != null) return
-        input.setText("")
-        history += command
-        historyIndex = history.size
-        append("$command\n")
-
-        if (command == "clear") {
-            output.text = ""
-            appendPrompt()
-            return
-        }
-        if (command == "pwd") {
-            append("${cwd.path}\n")
-            appendPrompt()
-            return
-        }
-        if (command == "cd" || command.startsWith("cd ")) {
-            changeDirectory(command.removePrefix("cd").trim())
-            return
-        }
-
+    private fun toggleRoot() {
+        if (rootMode) { startSession(false); return }
         scope.launch {
-            val exit = withContext(Dispatchers.IO) { runCommand(command) }
-            if (exit != null) append("\n[exit $exit]\n")
-            appendPrompt()
-        }
-    }
-
-    private fun runCommand(command: String): Int? {
-        val shellCommand = "cd ${ShellEscaper.quote(cwd.path)} && $command"
-        val process = try {
-            val builder = if (rootMode) ProcessBuilder("su", "-c", shellCommand)
-            else ProcessBuilder("/system/bin/sh", "-c", shellCommand)
-            builder.redirectErrorStream(true)
-            builder.environment()["HOME"] = filesDir.path
-            builder.environment()["TMPDIR"] = cacheDir.path
-            builder.environment()["PATH"] = "/system/bin:/system/xbin:/vendor/bin:/product/bin"
-            builder.start()
-        } catch (error: Throwable) {
-            runOnUiThread { append("Falha ao iniciar shell: ${error.message ?: "erro"}\n") }
-            return null
-        }
-        currentProcess = process
-        try {
-            process.inputStream.bufferedReader().useLines { lines ->
-                lines.forEach { line -> runOnUiThread { append("$line\n") } }
+            val authorized = if (graph.root.isAuthorized()) true else withContext(Dispatchers.IO) {
+                runCatching { graph.root.authorize() }.getOrDefault(false)
             }
-            return process.waitFor()
-        } finally {
-            currentProcess = null
+            if (!authorized) { toast("Root indisponível ou negado"); return@launch }
+            AlertDialog.Builder(this@TerminalActivity)
+                .setTitle("Iniciar PTY root?")
+                .setMessage("A próxima sessão terá privilégios de superusuário. Comandos executados nela podem modificar todo o sistema.")
+                .setPositiveButton("Iniciar ROOT") { _, _ -> startSession(true) }
+                .setNegativeButton("Cancelar", null).show()
         }
     }
 
-    private fun changeDirectory(argument: String) {
-        val target = if (argument.isBlank() || argument == "~") filesDir
-        else if (argument.startsWith('/')) File(argument) else File(cwd, argument)
-        val canonical = runCatching { target.canonicalFile }.getOrNull()
-        if (canonical == null || !canonical.isDirectory) append("cd: diretório não encontrado: $argument\n")
-        else cwd = canonical
-        appendPrompt()
+    private fun findSu(): String = listOf("/system/xbin/su", "/system/bin/su", "/sbin/su").firstOrNull { File(it).exists() } ?: "su"
+    private fun focusKeyboard() { keyboard.requestFocus() }
+    private fun button(label: String, action: () -> Unit) = Button(this).apply {
+        text = label; setTextColor(Color.WHITE); setBackgroundColor(Color.TRANSPARENT); minWidth = dp(44); setOnClickListener { action() }
     }
-
-    private fun toggleMode() {
-        if (!rootMode) {
-            if (!graph.root.isAuthorized()) {
-                AlertDialog.Builder(this)
-                    .setTitle("Terminal root")
-                    .setMessage("ROOT permite executar comandos como superusuário e pode alterar qualquer parte do sistema. Autorize somente se souber o que está fazendo.")
-                    .setPositiveButton("Autorizar") { _, _ -> scope.launch {
-                        val ok = withContext(Dispatchers.IO) { runCatching { graph.root.authorize() }.getOrDefault(false) }
-                        if (ok) { rootMode = true; updateMode() } else toast("Root indisponível ou negado")
-                    }}
-                    .setNegativeButton("Cancelar", null)
-                    .show()
-                return
-            }
-            rootMode = true
-        } else rootMode = false
-        updateMode()
-    }
-
-    private fun updateMode() {
-        modeButton.text = if (rootMode) "ROOT" else "APP"
-        append("\n[modo ${modeButton.text}]\n")
-        appendPrompt()
-    }
-
-    private fun stopProcess() {
-        val process = currentProcess ?: return
-        process.destroy()
-        runCatching { process.destroyForcibly() }
-        currentProcess = null
-        append("\n[processo interrompido]\n")
-        appendPrompt()
-    }
-
-    private fun historyUp() {
-        if (history.isEmpty()) return
-        historyIndex = (historyIndex - 1).coerceAtLeast(0)
-        input.setText(history[historyIndex])
-        input.setSelection(input.length())
-    }
-
-    private fun historyDown() {
-        if (history.isEmpty()) return
-        historyIndex = (historyIndex + 1).coerceAtMost(history.size)
-        val value = if (historyIndex == history.size) "" else history[historyIndex]
-        input.setText(value)
-        input.setSelection(input.length())
-    }
-
-    private fun appendPrompt() {
-        val sigil = if (rootMode) "#" else "\$"
-        append("$sigil ${cwd.path} > ")
-    }
-
-    private fun append(value: String) {
-        output.append(value)
-        scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
-    }
-
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
-    companion object {
-        const val EXTRA_WORKING_DIRECTORY = "working_directory"
-    }
+    companion object { const val EXTRA_WORKING_DIRECTORY = "working_directory" }
 }

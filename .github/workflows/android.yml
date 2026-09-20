@@ -18,25 +18,21 @@ jobs:
   debug:
     name: Test + Debug APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up JDK 25 LTS
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
-
       - name: Set up Gradle 9.6.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.6.1'
           cache-read-only: false
-
-      - name: Install Android SDK 37
+      - name: Install Android SDK 37 + NDK
         shell: bash
         run: |
           set -euo pipefail
@@ -44,16 +40,12 @@ jobs:
           test -n "$SDK_ROOT"
           SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print -quit)"
           test -n "$SDKMANAGER"
-          echo "Using sdkmanager: $SDKMANAGER"
-
           set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
           LICENSE_STATUS=${PIPESTATUS[1]}
           set -o pipefail
           test "$LICENSE_STATUS" -eq 0
-
-          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
-
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0" "platform-tools" "ndk;28.2.13676358" "cmake;3.22.1"
       - name: Test and build debug APK
         shell: bash
         run: |
@@ -61,7 +53,6 @@ jobs:
           java -version
           gradle --version
           gradle --no-daemon --stacktrace --warning-mode all testDebugUnitTest assembleDebug
-
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
@@ -70,7 +61,6 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
-
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
