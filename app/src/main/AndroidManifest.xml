@@ -23,7 +23,7 @@
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
-        android:icon="@drawable/ic_app"
+        android:icon="@drawable/fm_app_icon"
         android:label="Forge Manager"
         android:requestLegacyExternalStorage="false"
         android:supportsRtl="true"
@@ -32,10 +32,15 @@
 
         <activity android:name=".features.terminal.TerminalActivity" android:exported="false" />
         <activity android:name=".features.viewer.ImageViewerActivity" android:exported="false" />
+        <activity android:name=".features.viewer.DiskImageActivity" android:exported="false" />
         <activity android:name=".features.editor.HtmlPreviewActivity" android:exported="false" />
         <activity android:name=".features.apps.InstalledAppsActivity" android:exported="false" />
         <activity android:name=".features.apk.ApkInspectorActivity" android:exported="false" />
+        <activity android:name=".features.apk.ApkSignerActivity" android:exported="false" />
         <activity android:name=".features.dex.DexInspectorActivity" android:exported="false" />
+        <activity android:name=".features.dex.SmaliWorkspaceActivity" android:exported="false" />
+        <activity android:name=".features.resources.BinaryXmlEditorActivity" android:exported="false" />
+        <activity android:name=".features.resources.ResourceTableActivity" android:exported="false" />
         <activity android:name=".features.editor.HexViewerActivity" android:exported="false" />
         <activity android:name=".features.editor.TextEditorActivity" android:exported="false" />
         <activity android:name=".features.compare.TextCompareActivity" android:exported="false" />
