@@ -34,7 +34,9 @@ import com.forgemanager.app.core.file.OperationProgress
 import com.forgemanager.app.core.file.putFileLocation
 import com.forgemanager.app.archive.ZipOperations
 import com.forgemanager.app.features.apk.ApkInspectorActivity
+import com.forgemanager.app.features.apktools.ApkToolboxActivity
 import com.forgemanager.app.features.apps.InstalledAppsActivity
+import com.forgemanager.app.features.browser.ForgeBrowserActivity
 import com.forgemanager.app.features.compare.TextCompareActivity
 import com.forgemanager.app.features.editor.HexViewerActivity
 import com.forgemanager.app.features.editor.TextEditorActivity
@@ -42,6 +44,9 @@ import com.forgemanager.app.features.editor.HtmlPreviewActivity
 import com.forgemanager.app.features.viewer.ImageViewerActivity
 import com.forgemanager.app.features.terminal.TerminalActivity
 import com.forgemanager.app.features.dex.DexInspectorActivity
+import com.forgemanager.app.features.dex.SmaliStudioActivity
+import com.forgemanager.app.features.disk.DiskImageActivity
+import com.forgemanager.app.features.resources.BinaryResourceEditorActivity
 import com.forgemanager.app.features.explorer.DualPaneController
 import com.forgemanager.app.features.explorer.FileKind
 import com.forgemanager.app.features.explorer.FileListAdapter
@@ -91,7 +96,8 @@ class MainActivity : Activity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
         installSystemBarInsets()
-        val initial = FileLocation.Direct(Environment.getExternalStorageDirectory().path)
+        val initialPath = intent.getStringExtra(EXTRA_OPEN_PATH)?.takeIf { it.isNotBlank() } ?: Environment.getExternalStorageDirectory().path
+        val initial = FileLocation.Direct(initialPath)
         controller = DualPaneController(initial, initial)
         activePath = findViewById(R.id.activePath)
         folderInfo = findViewById(R.id.folderInfo)
@@ -310,11 +316,12 @@ class MainActivity : Activity() {
             val archivePath = node.location.path
             if (extension == "apk") {
                 AlertDialog.Builder(this).setTitle(node.name)
-                    .setItems(arrayOf("Abrir como ZIP", "Informações do APK", "Abrir com…")) { _, which ->
+                    .setItems(arrayOf("Abrir como ZIP", "APK Toolbox", "Informações do APK", "Abrir com…")) { _, which ->
                         when (which) {
                             0 -> navigate(id, FileLocation.Archive(archivePath))
-                            1 -> startActivity(Intent(this, ApkInspectorActivity::class.java).putExtra("path", archivePath))
-                            2 -> openWith(node)
+                            1 -> startActivity(Intent(this, ApkToolboxActivity::class.java).putExtra(ApkToolboxActivity.EXTRA_APK_PATH, archivePath))
+                            2 -> startActivity(Intent(this, ApkInspectorActivity::class.java).putExtra("path", archivePath))
+                            3 -> openWith(node)
                         }
                     }.show()
             } else navigate(id, FileLocation.Archive(archivePath))
@@ -323,7 +330,11 @@ class MainActivity : Activity() {
 
         when (kind) {
             FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))
-            FileKind.CODE, FileKind.SCRIPT, FileKind.MARKDOWN, FileKind.TEXT, FileKind.XML, FileKind.CONFIG -> openTextEditor(node)
+            FileKind.CODE, FileKind.SCRIPT, FileKind.MARKDOWN, FileKind.TEXT, FileKind.CONFIG -> openTextEditor(node)
+            FileKind.XML -> {
+                val binaryAxml = node.location is FileLocation.Archive && (node.location as FileLocation.Archive).archivePath.endsWith(".apk", true)
+                if (binaryAxml) startActivity(Intent(this, BinaryResourceEditorActivity::class.java).putFileLocation(node.location, node.name)) else openTextEditor(node)
+            }
             FileKind.WEB -> {
                 if (extension in setOf("html", "htm", "xhtml")) {
                     AlertDialog.Builder(this).setTitle(node.name)
@@ -338,9 +349,17 @@ class MainActivity : Activity() {
             }
             FileKind.DEX -> {
                 val direct = node.location as? FileLocation.Direct
-                if (direct != null) startActivity(Intent(this, DexInspectorActivity::class.java).putExtra("path", direct.path))
-                else openHexEditor(node)
+                val options = if (direct != null) arrayOf("Smali/DEX Studio", "DEX Inspector", "Hexadecimal") else arrayOf("Smali/DEX Studio", "Hexadecimal")
+                AlertDialog.Builder(this).setTitle(node.name).setItems(options) { _, which ->
+                    when {
+                        which == 0 -> startActivity(Intent(this, SmaliStudioActivity::class.java).putFileLocation(node.location, node.name))
+                        direct != null && which == 1 -> startActivity(Intent(this, DexInspectorActivity::class.java).putExtra("path", direct.path))
+                        else -> openHexEditor(node)
+                    }
+                }.show()
             }
+            FileKind.BINARY_RESOURCE -> startActivity(Intent(this, BinaryResourceEditorActivity::class.java).putFileLocation(node.location, node.name))
+            FileKind.DISK_IMAGE -> startActivity(Intent(this, DiskImageActivity::class.java).putFileLocation(node.location, node.name))
             FileKind.VIDEO, FileKind.AUDIO, FileKind.PDF, FileKind.DOCUMENT, FileKind.SPREADSHEET,
             FileKind.PRESENTATION, FileKind.FONT, FileKind.CERTIFICATE -> openWith(node)
             FileKind.EXECUTABLE, FileKind.DATABASE -> openHexEditor(node)
@@ -436,8 +455,12 @@ class MainActivity : Activity() {
                 if (ext in setOf("html", "htm", "xhtml")) startActivity(Intent(this, HtmlPreviewActivity::class.java).putFileLocation(node.location, node.name))
                 else openTextEditor(node)
             }
-            FileKind.CODE, FileKind.SCRIPT, FileKind.MARKDOWN, FileKind.TEXT, FileKind.XML, FileKind.CONFIG -> openTextEditor(node)
-            FileKind.DEX, FileKind.DATABASE, FileKind.EXECUTABLE -> openHexEditor(node)
+            FileKind.CODE, FileKind.SCRIPT, FileKind.MARKDOWN, FileKind.TEXT, FileKind.CONFIG -> openTextEditor(node)
+            FileKind.XML -> openTextEditor(node)
+            FileKind.DEX -> startActivity(Intent(this, SmaliStudioActivity::class.java).putFileLocation(node.location, node.name))
+            FileKind.BINARY_RESOURCE -> startActivity(Intent(this, BinaryResourceEditorActivity::class.java).putFileLocation(node.location, node.name))
+            FileKind.DISK_IMAGE -> startActivity(Intent(this, DiskImageActivity::class.java).putFileLocation(node.location, node.name))
+            FileKind.DATABASE, FileKind.EXECUTABLE -> openHexEditor(node)
             else -> openWith(node)
         }
     }
@@ -767,7 +790,8 @@ class MainActivity : Activity() {
             menu.add("Autorizar pasta (SAF)")
             menu.add("Acesso a todos os arquivos")
             menu.add("Aplicativos instalados")
-            menu.add("Terminal")
+            menu.add("Forge Web")
+            menu.add("Terminal PTY")
             menu.add("Adicionar bookmark")
             menu.add("Bookmarks")
             menu.add(graph.shizuku.status())
@@ -782,7 +806,8 @@ class MainActivity : Activity() {
                     it.title == "Autorizar pasta (SAF)" -> requestSafTree()
                     it.title == "Acesso a todos os arquivos" -> requestAllFilesAccess()
                     it.title == "Aplicativos instalados" -> startActivity(Intent(this@MainActivity, InstalledAppsActivity::class.java))
-                    it.title == "Terminal" -> {
+                    it.title == "Forge Web" -> startActivity(Intent(this@MainActivity, ForgeBrowserActivity::class.java))
+                    it.title == "Terminal PTY" -> {
                         val working = (controller.pane().current as? FileLocation.Direct)?.path ?: Environment.getExternalStorageDirectory().path
                         startActivity(Intent(this@MainActivity, TerminalActivity::class.java).putExtra(TerminalActivity.EXTRA_WORKING_DIRECTORY, working))
                     }
@@ -993,6 +1018,7 @@ class MainActivity : Activity() {
     private data class PaneUi(val root: View, val header: View, val path: TextView, val list: ListView, val adapter: FileListAdapter)
 
     companion object {
+        const val EXTRA_OPEN_PATH = "open_path"
         private const val REQ_TREE = 100
         private const val REQ_SHIZUKU = 101
         private const val REQ_STORAGE = 102
