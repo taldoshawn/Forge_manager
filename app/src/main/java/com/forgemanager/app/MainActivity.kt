@@ -40,6 +40,7 @@ import com.forgemanager.app.features.editor.HexViewerActivity
 import com.forgemanager.app.features.editor.TextEditorActivity
 import com.forgemanager.app.features.editor.HtmlPreviewActivity
 import com.forgemanager.app.features.viewer.ImageViewerActivity
+import com.forgemanager.app.features.viewer.DiskImageActivity
 import com.forgemanager.app.features.terminal.TerminalActivity
 import com.forgemanager.app.features.dex.DexInspectorActivity
 import com.forgemanager.app.features.explorer.DualPaneController
@@ -323,6 +324,7 @@ class MainActivity : Activity() {
 
         when (kind) {
             FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))
+            FileKind.DISK_IMAGE -> startActivity(Intent(this, DiskImageActivity::class.java).putFileLocation(node.location, node.name))
             FileKind.CODE, FileKind.SCRIPT, FileKind.MARKDOWN, FileKind.TEXT, FileKind.XML, FileKind.CONFIG -> openTextEditor(node)
             FileKind.WEB -> {
                 if (extension in setOf("html", "htm", "xhtml")) {
@@ -431,6 +433,7 @@ class MainActivity : Activity() {
     private fun openInternalViewer(node: FileNode) {
         when (FileTypeClassifier.classify(node.name, node.isDirectory)) {
             FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))
+            FileKind.DISK_IMAGE -> startActivity(Intent(this, DiskImageActivity::class.java).putFileLocation(node.location, node.name))
             FileKind.WEB -> {
                 val ext = FileTypeClassifier.extensionOf(node.name)
                 if (ext in setOf("html", "htm", "xhtml")) startActivity(Intent(this, HtmlPreviewActivity::class.java).putFileLocation(node.location, node.name))
