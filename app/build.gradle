@@ -3,26 +3,26 @@ plugins {
 }
 
 android {
-    namespace 'com.forgemanager.app'
-    compileSdk 37
+    namespace = 'com.forgemanager.app'
+    compileSdk = 37
 
     defaultConfig {
-        applicationId 'com.forgemanager.app'
-        minSdk 26
-        targetSdk 37
-        versionCode 5
-        versionName '0.3.1'
-        testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+        applicationId = 'com.forgemanager.app'
+        minSdk = 26
+        targetSdk = 37
+        versionCode = 5
+        versionName = '0.3.1'
+        testInstrumentationRunner = 'android.test.InstrumentationTestRunner'
     }
 
     buildFeatures {
-        aidl true
-        buildConfig true
+        aidl = true
+        buildConfig = true
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     testOptions {
