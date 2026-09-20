@@ -11,6 +11,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.forgemanager.app.R
 import com.forgemanager.app.core.file.FileNode
+import com.forgemanager.app.features.settings.UiPreferences
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -49,76 +50,78 @@ class FileListAdapter(
 
         val item = getItem(position)
         val kind = FileTypeClassifier.classify(item.name, item.isDirectory)
-        val icon = iconFor(kind, item.name)
-
-        holder.name.text = item.name
-        holder.icon.setImageResource(icon.res)
-        holder.icon.imageTintList = icon.tintColor?.let { color ->
-            ColorStateList.valueOf(ContextCompat.getColor(context, color))
+        val atlasDrawable = FileIconAtlas.drawable(context, item.name, item.isDirectory, kind)
+        if (atlasDrawable != null) {
+            holder.icon.setImageDrawable(atlasDrawable)
+            holder.icon.imageTintList = null
+        } else {
+            val icon = fallbackIcon(kind)
+            holder.icon.setImageResource(icon.res)
+            holder.icon.imageTintList = icon.tintColor?.let { color ->
+                ColorStateList.valueOf(ContextCompat.getColor(context, color))
+            }
         }
+
+        val compact = UiPreferences.compactRows(context)
+        val largeIcons = UiPreferences.largeIcons(context)
+        val rowHeight = dp(if (compact) 46 else 58)
+        view.layoutParams = (view.layoutParams ?: android.widget.AbsListView.LayoutParams(-1, rowHeight)).apply {
+            height = rowHeight
+        }
+        val iconSize = dp(if (largeIcons) { if (compact) 36 else 42 } else { if (compact) 30 else 34 })
+        holder.icon.layoutParams = holder.icon.layoutParams.apply { width = iconSize; height = iconSize }
         holder.icon.contentDescription = FileTypeClassifier.shortLabel(kind, item.name)
         holder.icon.alpha = 1f
 
+        holder.name.text = item.name
+        holder.name.textSize = if (compact) 11.5f else 12.8f
+        holder.details.textSize = if (compact) 8.8f else 9.5f
+
         val date = if (item.modified > 0) {
-            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
-                .format(Date(item.modified))
-        } else {
-            ""
-        }
+            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(item.modified))
+        } else ""
         val type = FileTypeClassifier.shortLabel(kind, item.name)
         holder.details.text = if (item.isDirectory) {
             listOf(type, date).filter(String::isNotBlank).joinToString("  •  ")
         } else {
-            listOf(type, formatBytes(item.size), date)
-                .filter(String::isNotBlank)
-                .joinToString("  •  ")
+            listOf(type, formatBytes(item.size), date).filter(String::isNotBlank).joinToString("  •  ")
         }
 
-        view.setBackgroundResource(
-            if (selected(item)) R.drawable.bg_file_item_selected else R.drawable.bg_file_item
-        )
+        view.setBackgroundResource(if (selected(item)) R.drawable.bg_file_item_selected else R.drawable.bg_file_item)
         return view
     }
 
-    private fun iconFor(kind: FileKind, name: String): IconSpec {
-        val extension = FileTypeClassifier.extensionOf(name)
-        return when (kind) {
-            FileKind.DIRECTORY -> IconSpec(R.drawable.fm_icon_folder)
-            FileKind.IMAGE -> IconSpec(
-                if (extension == "svg") R.drawable.fm_icon_svg else R.drawable.fm_icon_image
-            )
-            FileKind.ARCHIVE -> IconSpec(
-                if (extension == "rar") R.drawable.fm_icon_rar else R.drawable.fm_icon_zip
-            )
-            FileKind.AUDIO -> IconSpec(R.drawable.ic_file_audio, R.color.fm_audio)
-            FileKind.VIDEO -> IconSpec(R.drawable.ic_file_video, R.color.fm_video)
-            FileKind.PDF -> IconSpec(R.drawable.fm_icon_pdf)
-            FileKind.CODE, FileKind.SCRIPT, FileKind.WEB, FileKind.XML ->
-                IconSpec(R.drawable.fm_icon_code)
-            FileKind.TEXT, FileKind.MARKDOWN, FileKind.DOCUMENT, FileKind.CONFIG ->
-                IconSpec(R.drawable.fm_icon_text)
-            FileKind.APK -> IconSpec(R.drawable.ic_file_apk, R.color.fm_apk)
-            FileKind.DEX -> IconSpec(R.drawable.ic_file_dex, R.color.fm_dex)
-            FileKind.BINARY_RESOURCE -> IconSpec(R.drawable.ic_file_xml, R.color.fm_resource)
-            FileKind.DISK_IMAGE -> IconSpec(R.drawable.ic_file_executable, R.color.fm_disk_image)
-            FileKind.DATABASE -> IconSpec(R.drawable.ic_file_database, R.color.fm_database)
-            FileKind.FONT -> IconSpec(R.drawable.ic_file_font, R.color.fm_font)
-            FileKind.SPREADSHEET -> IconSpec(R.drawable.ic_file_sheet, R.color.fm_sheet)
-            FileKind.PRESENTATION -> IconSpec(
-                R.drawable.ic_file_presentation,
-                R.color.fm_presentation
-            )
-            FileKind.CERTIFICATE -> IconSpec(
-                R.drawable.ic_file_certificate,
-                R.color.fm_certificate
-            )
-            FileKind.EXECUTABLE -> IconSpec(R.drawable.ic_file_executable, R.color.fm_executable)
-            FileKind.GENERIC -> IconSpec(R.drawable.ic_file_generic, R.color.fm_text_file)
-        }
+    private fun fallbackIcon(kind: FileKind): IconSpec = when (kind) {
+        FileKind.DIRECTORY -> IconSpec(R.drawable.ic_file_folder, R.color.fm_folder)
+        FileKind.APK -> IconSpec(R.drawable.ic_file_apk, R.color.fm_apk)
+        FileKind.ARCHIVE -> IconSpec(R.drawable.ic_file_archive, R.color.fm_archive)
+        FileKind.IMAGE -> IconSpec(R.drawable.ic_file_image, R.color.fm_image)
+        FileKind.VIDEO -> IconSpec(R.drawable.ic_file_video, R.color.fm_video)
+        FileKind.AUDIO -> IconSpec(R.drawable.ic_file_audio, R.color.fm_audio)
+        FileKind.CODE, FileKind.WEB -> IconSpec(R.drawable.ic_file_code, R.color.fm_code)
+        FileKind.SCRIPT -> IconSpec(R.drawable.ic_file_code, R.color.fm_script)
+        FileKind.MARKDOWN -> IconSpec(R.drawable.ic_file_text, R.color.fm_markdown)
+        FileKind.TEXT, FileKind.SUBTITLE, FileKind.BACKUP -> IconSpec(R.drawable.ic_file_text, R.color.fm_text_file)
+        FileKind.DOCUMENT -> IconSpec(R.drawable.ic_file_text, R.color.fm_document)
+        FileKind.PDF -> IconSpec(R.drawable.ic_file_pdf, R.color.fm_pdf)
+        FileKind.DEX -> IconSpec(R.drawable.ic_file_dex, R.color.fm_dex)
+        FileKind.XML, FileKind.BINARY_RESOURCE -> IconSpec(R.drawable.ic_file_xml, R.color.fm_resource)
+        FileKind.DISK_IMAGE -> IconSpec(R.drawable.ic_file_executable, R.color.fm_disk_image)
+        FileKind.DATABASE -> IconSpec(R.drawable.ic_file_database, R.color.fm_database)
+        FileKind.FONT -> IconSpec(R.drawable.ic_file_font, R.color.fm_font)
+        FileKind.SPREADSHEET -> IconSpec(R.drawable.ic_file_sheet, R.color.fm_sheet)
+        FileKind.PRESENTATION -> IconSpec(R.drawable.ic_file_presentation, R.color.fm_presentation)
+        FileKind.CONFIG -> IconSpec(R.drawable.ic_file_text, R.color.fm_config)
+        FileKind.CERTIFICATE, FileKind.KEY -> IconSpec(R.drawable.ic_file_certificate, R.color.fm_certificate)
+        FileKind.TORRENT, FileKind.LINUX_PACKAGE, FileKind.MODEL3D, FileKind.EXECUTABLE ->
+            IconSpec(R.drawable.ic_file_executable, R.color.fm_executable)
+        FileKind.GENERIC -> IconSpec(R.drawable.ic_file_generic, R.color.fm_text_file)
     }
 
     private data class IconSpec(val res: Int, val tintColor: Int? = null)
     private data class Holder(val icon: ImageView, val name: TextView, val details: TextView)
+
+    private fun dp(value: Int) = (value * context.resources.displayMetrics.density).toInt()
 
     companion object {
         fun formatBytes(value: Long): String {

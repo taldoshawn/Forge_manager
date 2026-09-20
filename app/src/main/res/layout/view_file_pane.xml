@@ -9,12 +9,19 @@
     <LinearLayout
         android:id="@+id/paneHeader"
         android:layout_width="match_parent"
-        android:layout_height="34dp"
+        android:layout_height="38dp"
         android:background="@drawable/bg_pane_header"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="7dp"
-        android:paddingEnd="5dp">
+        android:paddingStart="9dp"
+        android:paddingEnd="7dp">
+
+        <View
+            android:id="@+id/paneAccent"
+            android:layout_width="3dp"
+            android:layout_height="18dp"
+            android:layout_marginEnd="7dp"
+            android:background="@color/fm_accent" />
 
         <TextView
             android:id="@+id/panePath"
@@ -24,7 +31,7 @@
             android:ellipsize="start"
             android:gravity="center_vertical"
             android:maxLines="1"
-            android:textColor="#4B5058"
+            android:textColor="#AAB5C4"
             android:textSize="10.5sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -37,10 +44,11 @@
         android:background="@color/fm_surface"
         android:choiceMode="none"
         android:clipToPadding="false"
-        android:divider="#FFE7E9EC"
+        android:divider="#171C24"
         android:dividerHeight="1dp"
         android:fastScrollEnabled="true"
         android:listSelector="@android:color/transparent"
-        android:paddingBottom="2dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="3dp"
         android:scrollbars="vertical" />
 </LinearLayout>
