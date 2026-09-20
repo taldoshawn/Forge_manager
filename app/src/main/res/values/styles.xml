@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ForgeManager" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.ForgeManager" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:colorAccent">@color/fm_accent</item>
-        <item name="android:navigationBarColor">@color/fm_surface</item>
-        <item name="android:statusBarColor">@color/fm_top</item>
+        <item name="android:windowBackground">@color/fm_background</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowNoTitle">true</item>
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:textColorPrimary">@color/fm_text</item>
+        <item name="android:textColorSecondary">@color/fm_secondary</item>
+        <item name="android:windowDisablePreview">false</item>
     </style>
 
     <style name="TopIconButton" parent="android:style/Widget.Material.ImageButton">
@@ -16,6 +21,7 @@
         <item name="android:layout_height">48dp</item>
         <item name="android:padding">12dp</item>
         <item name="android:background">@drawable/bg_toolbar_button</item>
+        <item name="android:tint">@color/fm_text</item>
     </style>
 
     <style name="BottomIconButton" parent="android:style/Widget.Material.ImageButton">
@@ -26,5 +32,6 @@
         <item name="android:minHeight">48dp</item>
         <item name="android:padding">14dp</item>
         <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:tint">@color/fm_text</item>
     </style>
 </resources>
