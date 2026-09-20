@@ -1,0 +1,56 @@
+name: Forge v0.5 integration
+
+on:
+  push:
+    branches: [ forge-v0.5.0-advanced ]
+    paths:
+      - '.github/workflows/forge-v05-integrate.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: forge-v0.5.0-advanced
+          fetch-depth: 0
+      - name: Patch main explorer routing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/forgemanager/app/MainActivity.kt')
+          s = p.read_text()
+          def once(a,b,label):
+              global s
+              n=s.count(a)
+              if n!=1: raise SystemExit(f'{label}: expected 1 match, got {n}')
+              s=s.replace(a,b,1)
+          once(
+              'import com.forgemanager.app.features.viewer.ImageViewerActivity\n',
+              'import com.forgemanager.app.features.viewer.ImageViewerActivity\nimport com.forgemanager.app.features.viewer.DiskImageActivity\n',
+              'disk import')
+          once(
+              '            FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))\n            FileKind.CODE,',
+              '            FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))\n            FileKind.DISK_IMAGE -> startActivity(Intent(this, DiskImageActivity::class.java).putFileLocation(node.location, node.name))\n            FileKind.CODE,',
+              'open node disk image')
+          once(
+              '            FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))\n            FileKind.WEB -> {',
+              '            FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))\n            FileKind.DISK_IMAGE -> startActivity(Intent(this, DiskImageActivity::class.java).putFileLocation(node.location, node.name))\n            FileKind.WEB -> {',
+              'internal viewer disk image')
+          p.write_text(s)
+          PY
+          git diff --check
+      - name: Commit integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/forgemanager/app/MainActivity.kt
+          git commit -m 'Route IMG files to disk image viewer'
+          git push origin HEAD:forge-v0.5.0-advanced
