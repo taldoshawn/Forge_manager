@@ -1,58 +1,26 @@
 package com.forgemanager.app.features.explorer
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.drawable.BitmapDrawable
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PixelFormat
+import android.graphics.RectF
+import android.graphics.Shader
+import android.graphics.Typeface
 import android.graphics.drawable.Drawable
-import android.util.LruCache
-import com.forgemanager.app.R
 
 /**
- * Crops the icon atlas supplied for Forge Manager into per-format drawables.
- * The atlas contains 11 columns x 6 rows; missing cells are transparent.
+ * Rich per-format icons inspired by the visual atlas supplied for Forge Manager.
+ * They are rendered locally so every supported extension has an icon without
+ * bundling dozens of independent bitmap resources.
  */
 object FileIconAtlas {
-    private const val COLS = 11
-    private const val ROWS = 6
-    private val cache = LruCache<String, Drawable>(96)
-    @Volatile private var atlas: Bitmap? = null
-
-    private val positions = mapOf(
-        "folder" to Pair(0, 0), "zip" to Pair(1, 0), "rar" to Pair(2, 0), "7z" to Pair(3, 0),
-        "tar" to Pair(4, 0), "gz" to Pair(5, 0), "apk" to Pair(6, 0), "aab" to Pair(7, 0),
-        "xapb" to Pair(8, 0), "xapk" to Pair(9, 0), "dex" to Pair(10, 0),
-        "smali" to Pair(0, 1), "xml" to Pair(1, 1), "arsc" to Pair(2, 1), "pdf" to Pair(3, 1),
-        "word" to Pair(4, 1), "excel" to Pair(5, 1), "powerpoint" to Pair(6, 1), "txt" to Pair(7, 1),
-        "markdown" to Pair(8, 1), "json" to Pair(9, 1),
-        "yaml" to Pair(0, 2), "toml" to Pair(1, 2), "html" to Pair(2, 2), "css" to Pair(3, 2),
-        "javascript" to Pair(4, 2), "typescript" to Pair(5, 2), "java" to Pair(6, 2), "kotlin" to Pair(7, 2),
-        "python" to Pair(8, 2), "c" to Pair(9, 2),
-        "cpp" to Pair(0, 3), "csharp" to Pair(1, 3), "rust" to Pair(2, 3), "go" to Pair(3, 3),
-        "php" to Pair(4, 3), "ruby" to Pair(5, 3), "swift" to Pair(6, 3), "dart" to Pair(7, 3),
-        "shell" to Pair(8, 3), "sql" to Pair(9, 3),
-        "lua" to Pair(0, 4), "jar" to Pair(1, 4), "exe" to Pair(2, 4), "dll" to Pair(3, 4),
-        "so" to Pair(4, 4), "bin" to Pair(5, 4), "db" to Pair(6, 4), "sqlite" to Pair(7, 4),
-        "iso" to Pair(8, 4), "img" to Pair(9, 4),
-        "font" to Pair(0, 5), "certificate" to Pair(1, 5), "key" to Pair(2, 5), "epub" to Pair(3, 5),
-        "subtitle" to Pair(4, 5), "torrent" to Pair(5, 5), "backup" to Pair(6, 5), "linuxpkg" to Pair(7, 5),
-        "model3d" to Pair(8, 5)
-    )
-
     fun drawable(context: Context, name: String, isDirectory: Boolean, kind: FileKind): Drawable? {
         val key = keyFor(name, isDirectory, kind) ?: return null
-        cache.get(key)?.let { return it }
-        val bitmap = atlas ?: synchronized(this) {
-            atlas ?: BitmapFactory.decodeResource(context.resources, R.drawable.fm_file_icon_atlas_v2).also { atlas = it }
-        } ?: return null
-        val position = positions[key] ?: return null
-        val tileWidth = bitmap.width / COLS
-        val tileHeight = bitmap.height / ROWS
-        val left = position.first * tileWidth
-        val top = position.second * tileHeight
-        if (left + tileWidth > bitmap.width || top + tileHeight > bitmap.height) return null
-        val crop = Bitmap.createBitmap(bitmap, left, top, tileWidth, tileHeight)
-        return BitmapDrawable(context.resources, crop).also { cache.put(key, it) }
+        return FormatDrawable(key, context.resources.displayMetrics.density)
     }
 
     fun keyFor(name: String, isDirectory: Boolean, kind: FileKind): String? {
@@ -124,5 +92,157 @@ object FileIconAtlas {
             kind == FileKind.CONFIG -> "json"
             else -> null
         }
+    }
+
+    private class FormatDrawable(private val key: String, private val density: Float) : Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val path = Path()
+
+        override fun draw(canvas: Canvas) {
+            if (bounds.isEmpty) return
+            val w = bounds.width().toFloat()
+            val h = bounds.height().toFloat()
+            canvas.save()
+            canvas.translate(bounds.left.toFloat(), bounds.top.toFloat())
+            if (key == "folder") drawFolder(canvas, w, h) else drawFile(canvas, w, h)
+            canvas.restore()
+        }
+
+        private fun drawFolder(canvas: Canvas, w: Float, h: Float) {
+            val r = RectF(w * .06f, h * .24f, w * .94f, h * .86f)
+            paint.style = Paint.Style.FILL
+            paint.shader = LinearGradient(0f, r.top, 0f, r.bottom, Color.rgb(255, 202, 32), Color.rgb(238, 153, 12), Shader.TileMode.CLAMP)
+            canvas.drawRoundRect(r, w * .09f, w * .09f, paint)
+            val tab = RectF(w * .10f, h * .13f, w * .51f, h * .37f)
+            canvas.drawRoundRect(tab, w * .07f, w * .07f, paint)
+            paint.shader = null
+            paint.color = Color.argb(70, 255, 255, 255)
+            paint.strokeWidth = maxOf(1f, density)
+            canvas.drawLine(w * .12f, h * .31f, w * .88f, h * .31f, paint)
+        }
+
+        private fun drawFile(canvas: Canvas, w: Float, h: Float) {
+            val base = colorFor(key)
+            val dark = darken(base, .72f)
+            val left = w * .10f
+            val top = h * .05f
+            val right = w * .90f
+            val bottom = h * .95f
+            val fold = w * .23f
+
+            path.reset()
+            path.moveTo(left + w * .07f, top)
+            path.lineTo(right - fold, top)
+            path.lineTo(right, top + fold)
+            path.lineTo(right, bottom - w * .07f)
+            path.quadTo(right, bottom, right - w * .07f, bottom)
+            path.lineTo(left + w * .07f, bottom)
+            path.quadTo(left, bottom, left, bottom - w * .07f)
+            path.lineTo(left, top + w * .07f)
+            path.quadTo(left, top, left + w * .07f, top)
+            path.close()
+
+            paint.style = Paint.Style.FILL
+            paint.shader = LinearGradient(left, top, right, bottom, base, dark, Shader.TileMode.CLAMP)
+            canvas.drawPath(path, paint)
+            paint.shader = null
+
+            path.reset()
+            path.moveTo(right - fold, top)
+            path.lineTo(right - fold, top + fold)
+            path.lineTo(right, top + fold)
+            path.close()
+            paint.color = lighten(base, 1.23f)
+            canvas.drawPath(path, paint)
+
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = maxOf(1f, density * .75f)
+            paint.color = Color.argb(80, 255, 255, 255)
+            canvas.drawPath(path, paint)
+            paint.style = Paint.Style.FILL
+
+            val label = labelFor(key)
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            paint.textAlign = Paint.Align.CENTER
+            paint.textSize = when {
+                label.length <= 2 -> w * .34f
+                label.length <= 4 -> w * .23f
+                else -> w * .17f
+            }
+            paint.color = textColorFor(key)
+            val metrics = paint.fontMetrics
+            val cy = h * .58f
+            val y = cy - (metrics.ascent + metrics.descent) / 2f
+            canvas.drawText(label, w * .50f, y, paint)
+
+            if (key in setOf("db", "sqlite")) {
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = w * .035f
+                paint.color = Color.argb(210, 230, 246, 255)
+                val rr = RectF(w * .27f, h * .34f, w * .73f, h * .70f)
+                canvas.drawOval(RectF(rr.left, rr.top, rr.right, rr.top + h * .12f), paint)
+                canvas.drawLine(rr.left, rr.top + h * .06f, rr.left, rr.bottom, paint)
+                canvas.drawLine(rr.right, rr.top + h * .06f, rr.right, rr.bottom, paint)
+                canvas.drawArc(RectF(rr.left, rr.bottom - h * .12f, rr.right, rr.bottom), 0f, 180f, false, paint)
+                paint.style = Paint.Style.FILL
+            }
+        }
+
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) { paint.colorFilter = colorFilter }
+        @Deprecated("Deprecated in Java") override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+
+        private fun labelFor(key: String): String = when (key) {
+            "zip" -> "ZIP"; "rar" -> "RAR"; "7z" -> "7Z"; "tar" -> "TAR"; "gz" -> "GZ"
+            "apk" -> "APK"; "aab" -> "AAB"; "xapb" -> "XAPB"; "xapk" -> "XAPK"; "dex" -> "DEX"
+            "smali" -> "</>"; "xml" -> "XML"; "arsc" -> "ARSC"; "pdf" -> "PDF"
+            "word" -> "W"; "excel" -> "X"; "powerpoint" -> "P"; "txt" -> "TXT"; "markdown" -> "M↓"; "json" -> "{}"
+            "yaml" -> "YML"; "toml" -> "⚙"; "html" -> "</>"; "css" -> "CSS"; "javascript" -> "JS"; "typescript" -> "TS"
+            "java" -> "J"; "kotlin" -> "K"; "python" -> "Py"; "c" -> "C"; "cpp" -> "C++"; "csharp" -> "C#"
+            "rust" -> "R"; "go" -> "GO"; "php" -> "PHP"; "ruby" -> "Rb"; "swift" -> "S"; "dart" -> "D"
+            "shell" -> ">_"; "sql" -> "SQL"; "lua" -> "Lua"; "jar" -> "JAR"; "exe" -> "EXE"; "dll" -> "DLL"; "so" -> "SO"
+            "bin" -> "0101"; "db" -> ""; "sqlite" -> ""; "iso" -> "ISO"; "img" -> "IMG"; "font" -> "Aa"
+            "certificate" -> "✓"; "key" -> "◆"; "epub" -> "EPUB"; "subtitle" -> "SRT"; "torrent" -> "µ"
+            "backup" -> "↻"; "linuxpkg" -> "LIN"; "model3d" -> "3D"; else -> key.uppercase().take(5)
+        }
+
+        private fun colorFor(key: String): Int = when (key) {
+            "zip", "7z", "gz", "dex", "smali", "exe", "dll", "so", "bin", "shell", "model3d" -> Color.rgb(50, 60, 74)
+            "rar", "arsc", "csharp" -> Color.rgb(128, 53, 222)
+            "tar" -> Color.rgb(188, 137, 80)
+            "apk", "xapb", "xapk", "excel", "epub", "torrent" -> Color.rgb(38, 185, 78)
+            "aab", "word", "css", "typescript", "c", "cpp", "dart", "db", "sqlite", "backup" -> Color.rgb(30, 119, 230)
+            "pdf", "yaml", "ruby" -> Color.rgb(222, 48, 58)
+            "powerpoint", "html", "swift", "linuxpkg" -> Color.rgb(245, 91, 35)
+            "javascript" -> Color.rgb(249, 209, 38)
+            "kotlin" -> Color.rgb(40, 47, 61)
+            "python" -> Color.rgb(44, 139, 205)
+            "rust" -> Color.rgb(45, 51, 61)
+            "go" -> Color.rgb(40, 184, 221)
+            "php" -> Color.rgb(150, 158, 180)
+            "lua" -> Color.rgb(13, 34, 161)
+            "font", "xml", "txt", "certificate" -> Color.rgb(232, 235, 240)
+            "key" -> Color.rgb(55, 65, 78)
+            "subtitle" -> Color.rgb(51, 60, 73)
+            "iso", "img" -> Color.rgb(171, 178, 189)
+            else -> Color.rgb(52, 109, 210)
+        }
+
+        private fun textColorFor(key: String): Int = when (key) {
+            "javascript", "font", "xml", "txt", "certificate", "tar", "iso", "img" -> Color.rgb(25, 29, 35)
+            else -> Color.WHITE
+        }
+
+        private fun darken(color: Int, factor: Float): Int = Color.rgb(
+            (Color.red(color) * factor).toInt().coerceIn(0, 255),
+            (Color.green(color) * factor).toInt().coerceIn(0, 255),
+            (Color.blue(color) * factor).toInt().coerceIn(0, 255)
+        )
+
+        private fun lighten(color: Int, factor: Float): Int = Color.rgb(
+            (Color.red(color) * factor).toInt().coerceIn(0, 255),
+            (Color.green(color) * factor).toInt().coerceIn(0, 255),
+            (Color.blue(color) * factor).toInt().coerceIn(0, 255)
+        )
     }
 }
