@@ -33,11 +33,13 @@ object AndroidBinaryResources {
         return Report(kind, out)
     }
 
+    /** Header-only sniffing. It intentionally accepts a prefix smaller than the declared root size. */
     fun isBinaryXml(data: ByteArray): Boolean =
-        data.size >= 8 && u16(data, 0) == RES_XML_TYPE && validRoot(data)
+        data.size >= 8 && u16(data, 0) == RES_XML_TYPE && plausibleRootHeader(data)
 
+    /** Header-only sniffing. Full bounds validation belongs to [inspect]. */
     fun isResourceTable(data: ByteArray): Boolean =
-        data.size >= 8 && u16(data, 0) == RES_TABLE_TYPE && validRoot(data)
+        data.size >= 8 && u16(data, 0) == RES_TABLE_TYPE && plausibleRootHeader(data)
 
     fun isPlainTextXml(data: ByteArray): Boolean {
         if (data.isEmpty()) return false
@@ -89,10 +91,10 @@ object AndroidBinaryResources {
         require(offset == end || end - offset < 8) { "Estrutura Android binária desalinhada" }
     }
 
-    private fun validRoot(data: ByteArray): Boolean = runCatching {
+    private fun plausibleRootHeader(data: ByteArray): Boolean = runCatching {
         val header = u16(data, 2)
         val size = u32(data, 4)
-        header >= 8 && size >= header && size <= data.size
+        header >= 8 && header <= size && size > 0
     }.getOrDefault(false)
 
     private fun label(type: Int): String = when (type) {
