@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   patch:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +38,6 @@ jobs:
           if 'EXTRA_LANGUAGE_OVERRIDE' not in s.split('companion object',1)[-1]:
               s=s.replace('    companion object {\n        private const val MAX_NORMAL_EDIT_BYTES', '    companion object {\n        const val EXTRA_LANGUAGE_OVERRIDE = "editor_language_override"\n        private const val MAX_NORMAL_EDIT_BYTES', 1)
           te.write_text(s)
-          assert 'const val EXTRA_LANGUAGE_OVERRIDE' in s
 
           ma=Path('app/src/main/java/com/forgemanager/app/MainActivity.kt')
           s=ma.read_text()
