@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,12 +58,6 @@ jobs:
               s=s.replace(marker, method+marker, 1)
           ma.write_text(s)
           assert 'private fun showOpenAs(node: FileNode)' in s
-
-          ar=Path('app/src/main/java/com/forgemanager/app/archive/ArchiveFileBackend.kt')
-          s=ar.read_text()
-          s=s.replace('''                    }\n                    raw.fd.sync()\n                }\n            }\n            // Re-open the produced ZIP''', '''                    }\n                }\n            }\n            FileOutputStream(temporary, true).use { it.fd.sync() }\n            // Re-open the produced ZIP''', 1)
-          ar.write_text(s)
-          assert 'FileOutputStream(temporary, true).use { it.fd.sync() }' in s
           PY
       - name: Commit source patches
         shell: bash
@@ -71,7 +65,7 @@ jobs:
           set -euo pipefail
           git config user.name 'Forge Manager CI'
           git config user.email 'actions@users.noreply.github.com'
-          git add app/src/main/java/com/forgemanager/app/MainActivity.kt app/src/main/java/com/forgemanager/app/features/editor/TextEditorActivity.kt app/src/main/java/com/forgemanager/app/archive/ArchiveFileBackend.kt
+          git add app/src/main/java/com/forgemanager/app/MainActivity.kt app/src/main/java/com/forgemanager/app/features/editor/TextEditorActivity.kt
           git diff --cached --check
           if ! git diff --cached --quiet; then
             git commit -m 'Complete Open As integration and lifecycle fixes'
