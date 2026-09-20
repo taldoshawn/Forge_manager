@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
@@ -28,24 +30,15 @@
         android:theme="@style/Theme.ForgeManager"
         android:usesCleartextTraffic="false">
 
-        <activity
-            android:name=".features.apps.InstalledAppsActivity"
-            android:exported="false" />
-        <activity
-            android:name=".features.apk.ApkInspectorActivity"
-            android:exported="false" />
-        <activity
-            android:name=".features.dex.DexInspectorActivity"
-            android:exported="false" />
-        <activity
-            android:name=".features.editor.HexViewerActivity"
-            android:exported="false" />
-        <activity
-            android:name=".features.editor.TextEditorActivity"
-            android:exported="false" />
-        <activity
-            android:name=".features.compare.TextCompareActivity"
-            android:exported="false" />
+        <activity android:name=".features.terminal.TerminalActivity" android:exported="false" />
+        <activity android:name=".features.viewer.ImageViewerActivity" android:exported="false" />
+        <activity android:name=".features.editor.HtmlPreviewActivity" android:exported="false" />
+        <activity android:name=".features.apps.InstalledAppsActivity" android:exported="false" />
+        <activity android:name=".features.apk.ApkInspectorActivity" android:exported="false" />
+        <activity android:name=".features.dex.DexInspectorActivity" android:exported="false" />
+        <activity android:name=".features.editor.HexViewerActivity" android:exported="false" />
+        <activity android:name=".features.editor.TextEditorActivity" android:exported="false" />
+        <activity android:name=".features.compare.TextCompareActivity" android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

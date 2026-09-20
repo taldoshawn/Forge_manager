@@ -35,11 +35,7 @@ class FileListAdapter(
         val holder: Holder
         val view = if (convertView == null) {
             inflater.inflate(R.layout.item_file, parent, false).also {
-                holder = Holder(
-                    it.findViewById(R.id.icon),
-                    it.findViewById(R.id.name),
-                    it.findViewById(R.id.details)
-                )
+                holder = Holder(it.findViewById(R.id.icon), it.findViewById(R.id.name), it.findViewById(R.id.details))
                 it.tag = holder
             }
         } else {
@@ -52,6 +48,8 @@ class FileListAdapter(
         holder.name.text = item.name
         holder.icon.setImageResource(iconFor(kind))
         holder.icon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, colorFor(kind)))
+        holder.icon.contentDescription = FileTypeClassifier.shortLabel(kind, item.name)
+        holder.icon.alpha = if (item.isDirectory) 1f else 0.94f
 
         val date = if (item.modified > 0) {
             DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(item.modified))
@@ -74,7 +72,11 @@ class FileListAdapter(
         FileKind.VIDEO -> R.drawable.ic_file_video
         FileKind.AUDIO -> R.drawable.ic_file_audio
         FileKind.CODE -> R.drawable.ic_file_code
+        FileKind.SCRIPT -> R.drawable.ic_file_script
+        FileKind.WEB -> R.drawable.ic_file_web
+        FileKind.MARKDOWN -> R.drawable.ic_file_markdown
         FileKind.TEXT -> R.drawable.ic_file_text
+        FileKind.DOCUMENT -> R.drawable.ic_file_document
         FileKind.PDF -> R.drawable.ic_file_pdf
         FileKind.DEX -> R.drawable.ic_file_dex
         FileKind.XML -> R.drawable.ic_file_xml
@@ -96,7 +98,11 @@ class FileListAdapter(
         FileKind.VIDEO -> R.color.fm_video
         FileKind.AUDIO -> R.color.fm_audio
         FileKind.CODE -> R.color.fm_code
+        FileKind.SCRIPT -> R.color.fm_script
+        FileKind.WEB -> R.color.fm_web
+        FileKind.MARKDOWN -> R.color.fm_markdown
         FileKind.TEXT -> R.color.fm_text_file
+        FileKind.DOCUMENT -> R.color.fm_document
         FileKind.PDF -> R.color.fm_pdf
         FileKind.DEX -> R.color.fm_dex
         FileKind.XML -> R.color.fm_xml

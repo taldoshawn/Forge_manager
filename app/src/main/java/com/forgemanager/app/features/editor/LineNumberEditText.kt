@@ -13,34 +13,42 @@ class LineNumberEditText @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : EditText(context, attrs) {
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.GRAY
+        color = Color.rgb(100, 116, 139)
         textSize = 11 * resources.displayMetrics.scaledDensity
         textAlign = Paint.Align.RIGHT
         typeface = Typeface.MONOSPACE
     }
-    private val gutter = (46 * resources.displayMetrics.density).toInt()
+    private val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(45, 55, 72)
+        strokeWidth = resources.displayMetrics.density
+    }
+    private val gutter = (48 * resources.displayMetrics.density).toInt()
 
     init {
         typeface = Typeface.MONOSPACE
         setTextSize(14f)
-        setTextColor(Color.rgb(35, 35, 35))
-        setBackgroundColor(Color.rgb(250, 250, 250))
-        setPadding(gutter, paddingTop, paddingRight, paddingBottom)
+        setTextColor(Color.rgb(226, 232, 240))
+        setBackgroundColor(Color.rgb(15, 18, 24))
+        setPadding(gutter, dp(10), dp(12), dp(12))
         gravity = android.view.Gravity.TOP or android.view.Gravity.START
         setHorizontallyScrolling(true)
+        includeFontPadding = false
     }
 
     override fun onDraw(canvas: Canvas) {
-        val layout = layout
-        if (layout != null) {
-            val first = layout.getLineForVertical(scrollY)
-            val last = layout.getLineForVertical(scrollY + height)
+        val currentLayout = layout
+        if (currentLayout != null) {
+            val first = currentLayout.getLineForVertical(scrollY)
+            val last = currentLayout.getLineForVertical(scrollY + height)
             for (line in first..last) {
-                val baseline = layout.getLineBaseline(line).toFloat()
-                canvas.drawText((line + 1).toString(), gutter - 8 * resources.displayMetrics.density, baseline, linePaint)
+                val baseline = currentLayout.getLineBaseline(line).toFloat()
+                canvas.drawText((line + 1).toString(), gutter - dp(9).toFloat(), baseline, linePaint)
             }
-            canvas.drawLine((gutter - 3).toFloat(), scrollY.toFloat(), (gutter - 3).toFloat(), (scrollY + height).toFloat(), linePaint)
+            val x = gutter - dp(4).toFloat()
+            canvas.drawLine(x, scrollY.toFloat(), x, (scrollY + height).toFloat(), dividerPaint)
         }
         super.onDraw(canvas)
     }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }

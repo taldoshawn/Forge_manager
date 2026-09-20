@@ -16,7 +16,11 @@
     <color name="fm_video">#D85858</color>
     <color name="fm_audio">#8B5BC7</color>
     <color name="fm_code">#3977C6</color>
+    <color name="fm_script">#2F8B76</color>
+    <color name="fm_web">#3B82C4</color>
+    <color name="fm_markdown">#5967B0</color>
     <color name="fm_text_file">#68717C</color>
+    <color name="fm_document">#4267A9</color>
     <color name="fm_pdf">#D34B45</color>
     <color name="fm_dex">#3B948B</color>
     <color name="fm_xml">#C97828</color>
