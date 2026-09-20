@@ -9,6 +9,7 @@ import android.widget.BaseAdapter
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.forgemanager.app.ForgeApplication
 import com.forgemanager.app.R
 import com.forgemanager.app.core.file.FileNode
 import com.forgemanager.app.features.settings.UiPreferences
@@ -21,12 +22,15 @@ class FileListAdapter(
     private val selected: (FileNode) -> Boolean
 ) : BaseAdapter() {
     private val inflater = LayoutInflater.from(context)
+    private val thumbnailLoader = ThumbnailLoader((context.applicationContext as ForgeApplication).graph.resolver)
     private var items: List<FileNode> = emptyList()
 
     fun submitList(value: List<FileNode>) {
         items = value
         notifyDataSetChanged()
     }
+
+    fun release() = thumbnailLoader.close()
 
     override fun getCount() = items.size
     override fun getItem(position: Int) = items[position]
@@ -50,18 +54,6 @@ class FileListAdapter(
 
         val item = getItem(position)
         val kind = FileTypeClassifier.classify(item.name, item.isDirectory)
-        val atlasDrawable = FileIconAtlas.drawable(context, item.name, item.isDirectory, kind)
-        if (atlasDrawable != null) {
-            holder.icon.setImageDrawable(atlasDrawable)
-            holder.icon.imageTintList = null
-        } else {
-            val icon = fallbackIcon(kind)
-            holder.icon.setImageResource(icon.res)
-            holder.icon.imageTintList = icon.tintColor?.let { color ->
-                ColorStateList.valueOf(ContextCompat.getColor(context, color))
-            }
-        }
-
         val compact = UiPreferences.compactRows(context)
         val largeIcons = UiPreferences.largeIcons(context)
         val rowHeight = dp(if (compact) 46 else 58)
@@ -72,10 +64,23 @@ class FileListAdapter(
         holder.icon.layoutParams = holder.icon.layoutParams.apply { width = iconSize; height = iconSize }
         holder.icon.contentDescription = FileTypeClassifier.shortLabel(kind, item.name)
         holder.icon.alpha = 1f
+        holder.icon.scaleType = ImageView.ScaleType.CENTER_INSIDE
+
+        if (kind == FileKind.IMAGE && FileTypeClassifier.extensionOf(item.name) != "svg") {
+            thumbnailLoader.load(holder.icon, item, iconSize * 2) {
+                applyFileIcon(holder.icon, item, kind)
+            }
+            holder.icon.scaleType = ImageView.ScaleType.CENTER_CROP
+        } else {
+            thumbnailLoader.cancel(holder.icon)
+            applyFileIcon(holder.icon, item, kind)
+        }
 
         holder.name.text = item.name
         holder.name.textSize = if (compact) 11.5f else 12.8f
+        holder.name.setTextColor(UiPreferences.textPrimary(context))
         holder.details.textSize = if (compact) 8.8f else 9.5f
+        holder.details.setTextColor(UiPreferences.textSecondary(context))
 
         val date = if (item.modified > 0) {
             DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(item.modified))
@@ -89,6 +94,21 @@ class FileListAdapter(
 
         view.setBackgroundResource(if (selected(item)) R.drawable.bg_file_item_selected else R.drawable.bg_file_item)
         return view
+    }
+
+    private fun applyFileIcon(view: ImageView, item: FileNode, kind: FileKind) {
+        view.scaleType = ImageView.ScaleType.CENTER_INSIDE
+        val asset = FileIconAtlas.drawable(context, item.name, item.isDirectory, kind)
+        if (asset != null) {
+            view.setImageDrawable(asset)
+            view.imageTintList = null
+        } else {
+            val icon = fallbackIcon(kind)
+            view.setImageResource(icon.res)
+            view.imageTintList = icon.tintColor?.let { color ->
+                ColorStateList.valueOf(ContextCompat.getColor(context, color))
+            }
+        }
     }
 
     private fun fallbackIcon(kind: FileKind): IconSpec = when (kind) {
