@@ -1,1 +1,0 @@
-Temporary staging only. Final branch must remove this directory after exact original launcher/icon assets are committed.
