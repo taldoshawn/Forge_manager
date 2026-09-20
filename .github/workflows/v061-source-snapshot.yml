@@ -1,0 +1,38 @@
+name: V061 source snapshot
+
+on:
+  push:
+    branches: [ v061-core-evolution ]
+    paths: [ '.github/workflows/v061-source-snapshot.yml' ]
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v061-core-evolution
+          fetch-depth: 0
+      - name: Pack source snapshot
+        shell: bash
+        run: |
+          tar --exclude=.git --exclude=.gradle --exclude=app/build -czf /tmp/forge-v061-source.tar.gz .
+      - name: Upload snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-v061-source-${{ github.sha }}
+          path: /tmp/forge-v061-source.tar.gz
+          if-no-files-found: error
+          retention-days: 2
+      - name: Remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/v061-source-snapshot.yml
+          git config user.name "Forge Manager CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove temporary source snapshot workflow"
+          git push origin HEAD:v061-core-evolution
