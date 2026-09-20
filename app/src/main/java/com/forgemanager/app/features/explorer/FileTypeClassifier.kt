@@ -5,6 +5,7 @@ enum class FileKind {
     APK,
     ARCHIVE,
     IMAGE,
+    DISK_IMAGE,
     VIDEO,
     AUDIO,
     CODE,
@@ -29,6 +30,7 @@ enum class FileKind {
 object FileTypeClassifier {
     private val archives = setOf("zip", "jar", "aar", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz", "zst", "epub")
     private val images = setOf("png", "jpg", "jpeg", "jpe", "webp", "gif", "bmp", "wbmp", "heic", "heif", "avif", "svg", "ico", "tif", "tiff")
+    private val diskImages = setOf("img", "simg", "raw", "iso")
     private val videos = setOf("mp4", "mkv", "webm", "avi", "mov", "m4v", "3gp", "ts", "m2ts", "flv", "mpeg", "mpg")
     private val audio = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "amr", "mid", "midi", "aiff", "ape")
     private val scripts = setOf("sh", "bash", "zsh", "fish", "bat", "cmd", "ps1")
@@ -57,6 +59,7 @@ object FileTypeClassifier {
             ext == "dex" || ext == "vdex" || ext == "odex" -> FileKind.DEX
             ext == "pdf" -> FileKind.PDF
             ext in archives -> FileKind.ARCHIVE
+            ext in diskImages -> FileKind.DISK_IMAGE
             ext in images -> FileKind.IMAGE
             ext in videos -> FileKind.VIDEO
             ext in audio -> FileKind.AUDIO
@@ -88,6 +91,7 @@ object FileTypeClassifier {
         FileKind.APK -> "Pacote Android"
         FileKind.ARCHIVE -> extensionOf(name).uppercase().ifBlank { "Compactado" }
         FileKind.IMAGE -> extensionOf(name).uppercase().ifBlank { "Imagem" }
+        FileKind.DISK_IMAGE -> extensionOf(name).uppercase().ifBlank { "Imagem de disco" }
         FileKind.VIDEO -> "Vídeo"
         FileKind.AUDIO -> "Áudio"
         FileKind.CODE -> extensionOf(name).uppercase().ifBlank { "Código" }
