@@ -1,0 +1,129 @@
+name: Forge advanced one-shot integration
+
+on:
+  push:
+    branches: [ forge-0.5-advanced ]
+    paths:
+      - '.github/workflows/forge-advanced-integrate.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: forge-0.5-advanced
+
+      - name: Integrate advanced viewers and APK tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/forgemanager/app/MainActivity.kt')
+          text = path.read_text(encoding='utf-8')
+
+          def once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              text = text.replace(old, new, 1)
+
+          once(
+              'import com.forgemanager.app.features.apk.ApkInspectorActivity\n',
+              'import com.forgemanager.app.features.apk.ApkInspectorActivity\nimport com.forgemanager.app.features.apk.ApkToolsActivity\n',
+              'apk tools import'
+          )
+          once(
+              'import com.forgemanager.app.features.editor.HtmlPreviewActivity\n',
+              'import com.forgemanager.app.features.editor.HtmlPreviewActivity\nimport com.forgemanager.app.features.editor.BinaryResourceEditorActivity\n',
+              'binary resource import'
+          )
+          once(
+              'import com.forgemanager.app.features.viewer.ImageViewerActivity\n',
+              'import com.forgemanager.app.features.viewer.ImageViewerActivity\nimport com.forgemanager.app.features.viewer.DiskImageActivity\n',
+              'disk image import'
+          )
+          once(
+              'import com.forgemanager.app.features.dex.DexInspectorActivity\n',
+              'import com.forgemanager.app.features.dex.DexInspectorActivity\nimport com.forgemanager.app.features.dex.SmaliWorkbenchActivity\n',
+              'smali import'
+          )
+
+          once(
+              '                    .setItems(arrayOf("Abrir como ZIP", "Informações do APK", "Abrir com…")) { _, which ->\n                        when (which) {\n                            0 -> navigate(id, FileLocation.Archive(archivePath))\n                            1 -> startActivity(Intent(this, ApkInspectorActivity::class.java).putExtra("path", archivePath))\n                            2 -> openWith(node)\n                        }\n                    }.show()\n',
+              '                    .setItems(arrayOf("Abrir como ZIP", "Informações do APK", "Ferramentas APK", "Abrir com…")) { _, which ->\n                        when (which) {\n                            0 -> navigate(id, FileLocation.Archive(archivePath))\n                            1 -> startActivity(Intent(this, ApkInspectorActivity::class.java).putExtra("path", archivePath))\n                            2 -> startActivity(Intent(this, ApkToolsActivity::class.java).putExtra(ApkToolsActivity.EXTRA_PATH, archivePath))\n                            3 -> openWith(node)\n                        }\n                    }.show()\n',
+              'apk open menu'
+          )
+
+          once(
+              '            FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))\n            FileKind.CODE, FileKind.SCRIPT, FileKind.MARKDOWN, FileKind.TEXT, FileKind.XML, FileKind.CONFIG -> openTextEditor(node)\n',
+              '            FileKind.DISK_IMAGE -> openDiskImage(node)\n            FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))\n            FileKind.CODE, FileKind.SCRIPT, FileKind.MARKDOWN, FileKind.TEXT, FileKind.CONFIG -> openTextEditor(node)\n            FileKind.XML -> {\n                if (extension == "axml" || extension == "arsc" || node.name.equals("resources.arsc", true)) openBinaryResource(node)\n                else openTextEditor(node)\n            }\n',
+              'disk and binary resource routing'
+          )
+
+          old_dex = '''            FileKind.DEX -> {
+                val direct = node.location as? FileLocation.Direct
+                if (direct != null) startActivity(Intent(this, DexInspectorActivity::class.java).putExtra("path", direct.path))
+                else openHexEditor(node)
+            }
+'''
+          new_dex = '''            FileKind.DEX -> showDexActions(node)
+'''
+          once(old_dex, new_dex, 'dex routing')
+
+          marker = '    private fun openTextEditor(node: FileNode) {'
+          helpers = '''    private fun openDiskImage(node: FileNode) {
+        startActivity(Intent(this, DiskImageActivity::class.java).putFileLocation(node.location, node.name))
+    }
+
+    private fun openBinaryResource(node: FileNode) {
+        startActivity(Intent(this, BinaryResourceEditorActivity::class.java).putFileLocation(node.location, node.name))
+    }
+
+    private fun showDexActions(node: FileNode) {
+        val direct = node.location as? FileLocation.Direct
+        val labels = if (direct != null) arrayOf("Inspecionar DEX", "Editar/rebuild Smali", "Editor hexadecimal")
+        else arrayOf("Editar/rebuild Smali", "Editor hexadecimal")
+        AlertDialog.Builder(this).setTitle(node.name).setItems(labels) { _, which ->
+            when (labels[which]) {
+                "Inspecionar DEX" -> startActivity(Intent(this, DexInspectorActivity::class.java).putExtra("path", direct!!.path))
+                "Editar/rebuild Smali" -> startActivity(Intent(this, SmaliWorkbenchActivity::class.java).putFileLocation(node.location, node.name))
+                else -> openHexEditor(node)
+            }
+        }.show()
+    }
+
+'''
+          if text.count(marker) != 1:
+              raise SystemExit('helper insertion marker mismatch')
+          text = text.replace(marker, helpers + marker, 1)
+
+          once(
+              '        when (FileTypeClassifier.classify(node.name, node.isDirectory)) {\n            FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))\n',
+              '        when (FileTypeClassifier.classify(node.name, node.isDirectory)) {\n            FileKind.DISK_IMAGE -> openDiskImage(node)\n            FileKind.IMAGE -> startActivity(Intent(this, ImageViewerActivity::class.java).putFileLocation(node.location, node.name))\n',
+              'internal disk image viewer'
+          )
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git diff --check
+
+      - name: Commit integration and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/forge-advanced-integrate.yml
+          git add app/src/main/java/com/forgemanager/app/MainActivity.kt
+          git commit -m "Integrate APK Smali resources and disk image tools"
+          git push origin HEAD:forge-0.5-advanced
