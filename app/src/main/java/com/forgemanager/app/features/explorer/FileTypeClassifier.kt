@@ -4,6 +4,7 @@ enum class FileKind {
     DIRECTORY,
     APK,
     ARCHIVE,
+    DISK_IMAGE,
     IMAGE,
     VIDEO,
     AUDIO,
@@ -27,7 +28,8 @@ enum class FileKind {
 }
 
 object FileTypeClassifier {
-    private val archives = setOf("zip", "jar", "aar", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz", "zst", "epub")
+    private val archives = setOf("zip", "jar", "aar", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz", "zst", "epub", "cab", "lz4")
+    private val diskImages = setOf("img", "simg", "iso", "raw", "qcow", "qcow2", "vhd", "vhdx")
     private val images = setOf("png", "jpg", "jpeg", "jpe", "webp", "gif", "bmp", "wbmp", "heic", "heif", "avif", "svg", "ico", "tif", "tiff")
     private val videos = setOf("mp4", "mkv", "webm", "avi", "mov", "m4v", "3gp", "ts", "m2ts", "flv", "mpeg", "mpg")
     private val audio = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "amr", "mid", "midi", "aiff", "ape")
@@ -40,7 +42,7 @@ object FileTypeClassifier {
     )
     private val text = setOf("txt", "log", "csv", "ini", "cfg", "conf", "properties", "prop")
     private val documents = setOf("doc", "docx", "odt", "rtf", "pages")
-    private val xml = setOf("xml", "xsl", "xslt", "plist")
+    private val xml = setOf("xml", "xsl", "xslt", "plist", "axml")
     private val databases = setOf("db", "sqlite", "sqlite3", "realm", "mdb", "accdb")
     private val fonts = setOf("ttf", "otf", "woff", "woff2")
     private val spreadsheets = setOf("xls", "xlsx", "ods", "numbers")
@@ -56,6 +58,7 @@ object FileTypeClassifier {
             ext == "apk" || ext == "apks" || ext == "xapk" || ext == "apkm" || ext == "aab" -> FileKind.APK
             ext == "dex" || ext == "vdex" || ext == "odex" -> FileKind.DEX
             ext == "pdf" -> FileKind.PDF
+            ext in diskImages -> FileKind.DISK_IMAGE
             ext in archives -> FileKind.ARCHIVE
             ext in images -> FileKind.IMAGE
             ext in videos -> FileKind.VIDEO
@@ -87,6 +90,7 @@ object FileTypeClassifier {
         FileKind.DIRECTORY -> "Pasta"
         FileKind.APK -> "Pacote Android"
         FileKind.ARCHIVE -> extensionOf(name).uppercase().ifBlank { "Compactado" }
+        FileKind.DISK_IMAGE -> extensionOf(name).uppercase().ifBlank { "Imagem de disco" }
         FileKind.IMAGE -> extensionOf(name).uppercase().ifBlank { "Imagem" }
         FileKind.VIDEO -> "Vídeo"
         FileKind.AUDIO -> "Áudio"
