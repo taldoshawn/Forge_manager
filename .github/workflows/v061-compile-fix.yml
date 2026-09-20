@@ -1,0 +1,69 @@
+name: V061 compile fixes
+
+on:
+  push:
+    branches: [ v061-core-evolution ]
+    paths: [ '.github/workflows/v061-compile-fix.yml' ]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v061-core-evolution
+          fetch-depth: 0
+      - name: Apply focused Kotlin fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              if old not in s:
+                  raise SystemExit(f'pattern not found in {path}: {old!r}')
+              p.write_text(s.replace(old, new))
+
+          replace(
+              'app/src/main/java/com/forgemanager/app/features/editor/EditorTools.kt',
+              'match.groups.getOrNull(1)?.value',
+              'match.groups[1]?.value'
+          )
+          replace(
+              'app/src/main/java/com/forgemanager/app/features/editor/SyntaxHighlighter.kt',
+              'raw.drop(1).joinToString("") { "$it$it" }',
+              'raw.drop(1).map { "$it$it" }.joinToString("")'
+          )
+          replace(
+              'app/src/main/java/com/forgemanager/app/features/editor/HexViewerActivity.kt',
+              'top.addView(tool("⋮", "Mais") { showMore(it) })',
+              'val moreButton = tool("⋮", "Mais") { }\n        moreButton.setOnClickListener { showMore(moreButton) }\n        top.addView(moreButton)'
+          )
+          smali = Path('app/src/main/java/com/forgemanager/app/features/dex/SmaliStudioActivity.kt')
+          s = smali.read_text()
+          old = 'companion object{private const val API_LEVEL=30;private const val MAX_DEX_BYTES=256L*1024*1024;private const val MAX_LISTED_FILES=50_000}'
+          new = 'companion object{const val EXTRA_CLASS_DESCRIPTOR="class_descriptor";private const val API_LEVEL=30;private const val MAX_DEX_BYTES=256L*1024*1024;private const val MAX_LISTED_FILES=50_000}'
+          if old not in s:
+              raise SystemExit('SmaliStudio companion pattern not found')
+          s = s.replace(old, new)
+          old2 = 'files=it;disassembled=true;rebuilt=false;applyFilter();status.text="$displayName • ${files.size} classes Smali"'
+          new2 = 'files=it;disassembled=true;rebuilt=false;intent.getStringExtra(EXTRA_CLASS_DESCRIPTOR)?.let { descriptor -> filter.setText(descriptor.removePrefix("L").removeSuffix(";").replace(\'/\', java.io.File.separatorChar) + ".smali") };applyFilter();status.text="$displayName • ${files.size} classes Smali"'
+          if old2 not in s:
+              raise SystemExit('SmaliStudio success pattern not found')
+          smali.write_text(s.replace(old2, new2))
+          PY
+      - name: Remove this one-shot workflow and commit
+        shell: bash
+        run: |
+          rm .github/workflows/v061-compile-fix.yml
+          git config user.name "Forge Manager CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Fix v0.6 evolution Kotlin compile errors"
+          git push origin HEAD:v061-core-evolution
