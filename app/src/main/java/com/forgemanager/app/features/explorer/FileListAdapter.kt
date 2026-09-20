@@ -69,18 +69,24 @@ class FileListAdapter(
 
     private fun iconFor(kind: FileKind, name: String): IconSpec {
         val ext = FileTypeClassifier.extensionOf(name)
+        if (FileTypeClassifier.isDiskImageName(name) && kind != FileKind.IMAGE) {
+            return IconSpec(R.drawable.ic_file_disk_image, false)
+        }
         return when (kind) {
             FileKind.DIRECTORY -> IconSpec(R.drawable.ic_file_folder_rich, true)
             FileKind.ARCHIVE -> if (ext in setOf("rar", "7z")) IconSpec(R.drawable.ic_file_rar_rich, true)
                 else IconSpec(R.drawable.ic_file_zip_rich, true)
-            FileKind.IMAGE -> if (ext == "svg") IconSpec(R.drawable.ic_file_vector_rich, true)
-                else IconSpec(R.drawable.ic_file_image_rich, true)
+            FileKind.IMAGE -> IconSpec(
+                when {
+                    ext == "svg" -> R.drawable.ic_file_vector_rich
+                    else -> R.drawable.ic_file_image_rich
+                }, true
+            )
             FileKind.VIDEO -> IconSpec(R.drawable.ic_file_video_rich, true)
             FileKind.AUDIO -> IconSpec(R.drawable.ic_file_audio_rich, true)
             FileKind.PDF -> IconSpec(R.drawable.ic_file_pdf_rich, true)
             FileKind.CODE, FileKind.SCRIPT, FileKind.WEB, FileKind.MARKDOWN -> IconSpec(R.drawable.ic_file_code_rich, true)
             FileKind.TEXT, FileKind.DOCUMENT -> IconSpec(R.drawable.ic_file_text_rich, true)
-            FileKind.DISK_IMAGE -> IconSpec(R.drawable.ic_file_disk_image, false)
             FileKind.APK -> IconSpec(R.drawable.ic_file_apk, false)
             FileKind.DEX -> IconSpec(R.drawable.ic_file_dex, false)
             FileKind.XML -> IconSpec(R.drawable.ic_file_xml, false)
@@ -99,7 +105,6 @@ class FileListAdapter(
         FileKind.DIRECTORY -> R.color.fm_folder
         FileKind.APK -> R.color.fm_apk
         FileKind.ARCHIVE -> R.color.fm_archive
-        FileKind.DISK_IMAGE -> R.color.fm_disk_image
         FileKind.IMAGE -> R.color.fm_image
         FileKind.VIDEO -> R.color.fm_video
         FileKind.AUDIO -> R.color.fm_audio
