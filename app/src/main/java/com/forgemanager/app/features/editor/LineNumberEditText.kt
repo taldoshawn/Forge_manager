@@ -12,6 +12,8 @@ class LineNumberEditText @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : EditText(context, attrs) {
+    var onSelectionChangedListener: ((start: Int, end: Int) -> Unit)? = null
+
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(100, 116, 139)
         textSize = 11 * resources.displayMetrics.scaledDensity
@@ -33,6 +35,25 @@ class LineNumberEditText @JvmOverloads constructor(
         gravity = android.view.Gravity.TOP or android.view.Gravity.START
         setHorizontallyScrolling(true)
         includeFontPadding = false
+    }
+
+    fun applyPalette(background: Int, text: Int, gutterText: Int, divider: Int) {
+        setBackgroundColor(background)
+        setTextColor(text)
+        linePaint.color = gutterText
+        dividerPaint.color = divider
+        invalidate()
+    }
+
+    fun setWordWrapEnabled(enabled: Boolean) {
+        setHorizontallyScrolling(!enabled)
+        maxLines = Int.MAX_VALUE
+        invalidate()
+    }
+
+    override fun onSelectionChanged(selStart: Int, selEnd: Int) {
+        super.onSelectionChanged(selStart, selEnd)
+        onSelectionChangedListener?.invoke(selStart, selEnd)
     }
 
     override fun onDraw(canvas: Canvas) {
