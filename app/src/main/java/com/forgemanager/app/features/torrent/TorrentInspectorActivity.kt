@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.torrent
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
@@ -20,7 +22,7 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 
-class TorrentInspectorActivity : Activity() {
+class TorrentInspectorActivity : ForgeActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val graph by lazy { (application as ForgeApplication).graph }
     private lateinit var output: TextView

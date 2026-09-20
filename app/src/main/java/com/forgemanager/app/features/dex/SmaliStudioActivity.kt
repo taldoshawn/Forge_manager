@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.dex
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
@@ -33,7 +35,7 @@ import org.jf.smali.Smali
 import org.jf.smali.SmaliOptions
 import java.io.File
 
-class SmaliStudioActivity : Activity() {
+class SmaliStudioActivity : ForgeActivity() {
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);private val graph by lazy{(application as ForgeApplication).graph}
     private lateinit var location:FileLocation;private lateinit var displayName:String;private lateinit var workspace:File;private lateinit var inputDex:File;private lateinit var smaliDir:File;private lateinit var rebuiltDex:File;private lateinit var status:TextView;private lateinit var filter:EditText;private lateinit var list:ListView
     private var files:List<File> = emptyList();private var shown:List<File> = emptyList();private var disassembled=false;private var rebuilt=false

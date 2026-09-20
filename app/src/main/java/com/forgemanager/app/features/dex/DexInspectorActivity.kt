@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.dex
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
@@ -25,7 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class DexInspectorActivity : Activity() {
+class DexInspectorActivity : ForgeActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var workspace: DexWorkspace? = null
     private lateinit var output: TextView

@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.resources
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
@@ -26,7 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
-class BinaryResourceEditorActivity : Activity() {
+class BinaryResourceEditorActivity : ForgeActivity() {
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
     private val graph by lazy{(application as ForgeApplication).graph}
     private lateinit var location:FileLocation; private lateinit var displayName:String; private lateinit var status:TextView; private lateinit var search:EditText; private lateinit var list:ListView; private lateinit var bytes:ByteArray

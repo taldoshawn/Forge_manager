@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.apktools
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
@@ -30,7 +32,7 @@ import java.security.cert.X509Certificate
 import java.util.Date
 import javax.security.auth.x500.X500Principal
 
-class ApkToolboxActivity : Activity() {
+class ApkToolboxActivity : ForgeActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var apk: File
     private lateinit var status: TextView

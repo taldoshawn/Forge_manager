@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.apk
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
@@ -22,7 +24,7 @@ import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.zip.ZipFile
 
-class ApkInspectorActivity : Activity() {
+class ApkInspectorActivity : ForgeActivity() {
     private lateinit var file: File
     private lateinit var output: TextView
 

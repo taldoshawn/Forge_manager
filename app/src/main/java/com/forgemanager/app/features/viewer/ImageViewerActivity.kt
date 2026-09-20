@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.viewer
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.BitmapFactory
@@ -28,7 +30,7 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
-class ImageViewerActivity : Activity() {
+class ImageViewerActivity : ForgeActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val graph by lazy { (application as ForgeApplication).graph }
     private lateinit var location: FileLocation

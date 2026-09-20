@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.editor
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
@@ -24,7 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 
-class HtmlPreviewActivity : Activity() {
+class HtmlPreviewActivity : ForgeActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val graph by lazy { (application as ForgeApplication).graph }
     private lateinit var location: FileLocation

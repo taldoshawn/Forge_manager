@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.disk
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
@@ -27,7 +29,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
 
-class DiskImageActivity : Activity() {
+class DiskImageActivity : ForgeActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val graph by lazy { (application as ForgeApplication).graph }
 

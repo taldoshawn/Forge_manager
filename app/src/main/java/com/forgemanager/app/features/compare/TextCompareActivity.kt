@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.compare
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
@@ -22,7 +24,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.charset.Charset
 
-class TextCompareActivity : Activity() {
+class TextCompareActivity : ForgeActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var title: TextView
     private lateinit var output: TextView

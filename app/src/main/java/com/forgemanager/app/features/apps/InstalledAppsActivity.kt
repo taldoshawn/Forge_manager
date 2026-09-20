@@ -1,5 +1,7 @@
 package com.forgemanager.app.features.apps
 
+import com.forgemanager.app.core.ui.ForgeActivity
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
@@ -26,7 +28,7 @@ import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-class InstalledAppsActivity : Activity() {
+class InstalledAppsActivity : ForgeActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var list: ListView
     private var apps: List<PackageInfo> = emptyList()
