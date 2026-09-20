@@ -828,10 +828,10 @@ class MainActivity : Activity() {
             "archive" -> FileLocation.Archive(json.getString("archivePath"), json.optString("entryPath"))
             "saf" -> {
                 val parentJson = json.optJSONArray("parents") ?: JSONArray()
-                val parents = ArrayList<com.forgemanager.app.core.file.SafParent>(parentJson.length())
+                val parents = ArrayList<FileLocation.SafParent>(parentJson.length())
                 for (index in 0 until parentJson.length()) {
                     val value = parentJson.getJSONObject(index)
-                    parents += com.forgemanager.app.core.file.SafParent(value.getString("documentUri"), value.getString("displayPath"))
+                    parents += FileLocation.SafParent(value.getString("documentUri"), value.getString("displayPath"))
                 }
                 FileLocation.Saf(
                     documentUri = json.getString("documentUri"),
