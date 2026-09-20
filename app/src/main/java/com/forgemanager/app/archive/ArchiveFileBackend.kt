@@ -209,9 +209,12 @@ class ArchiveFileBackend(context: Context) : FileBackend {
                             output.putNextEntry(ZipEntry(safe)); output.closeEntry()
                         }
                     }
-                    raw.fd.sync()
                 }
             }
+            // The ZIP streams above are fully closed before syncing. Reopening the
+            // completed temporary file avoids calling fsync on a descriptor closed
+            // by the buffered ZipOutputStream wrapper.
+            FileOutputStream(temporary, true).use { it.fd.sync() }
             // Re-open the produced ZIP before touching the original. This catches corrupt rewrites.
             ZipFile(temporary).use { zip ->
                 val budget = ArchiveBudget()
