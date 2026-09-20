@@ -8,13 +8,21 @@ import java.io.RandomAccessFile
 import java.nio.charset.Charset
 import java.util.zip.ZipFile
 
+data class DexClassInfo(
+    val descriptor: String,
+    val superclass: String?,
+    val interfaces: List<String>,
+    val accessFlags: Long
+)
+
 data class DexSummary(
     val name: String,
     val strings: List<String>,
     val types: List<String>,
     val classes: List<String>,
     val methods: List<String>,
-    val fields: List<String>
+    val fields: List<String>,
+    val classInfo: Map<String, DexClassInfo> = emptyMap()
 )
 
 class DexWorkspace private constructor(
@@ -26,7 +34,11 @@ class DexWorkspace private constructor(
             val r = Regex(query, RegexOption.IGNORE_CASE); { r.containsMatchIn(it) }
         } else { { it.contains(query, ignoreCase = true) } }
         return dexFiles.flatMap { dex ->
-            (dex.classes + dex.methods + dex.fields + dex.strings).asSequence().filter(matcher).take(2_000).map { "[${dex.name}] $it" }.toList()
+            (dex.classes + dex.methods + dex.fields + dex.strings).asSequence()
+                .filter(matcher)
+                .take(2_000)
+                .map { "[${dex.name}] $it" }
+                .toList()
         }
     }
 
@@ -72,49 +84,108 @@ class DexWorkspace private constructor(
             val methodsOff = uintAt(92)
             val classesSize = checkedCount(uintAt(96), "classes")
             val classesOff = uintAt(100)
+
             val strings = ArrayList<String>(stringsSize)
             for (i in 0 until stringsSize) {
                 input.seek(stringsOff + i * 4L)
                 val dataOff = readUIntLE(input)
                 require(dataOff in 0 until input.length()) { "Offset de string inválido" }
-                input.seek(dataOff); readUleb128(input)
+                input.seek(dataOff)
+                readUleb128(input)
                 val bytes = ArrayList<Byte>()
-                while (bytes.size < MAX_STRING_BYTES) { val b = input.read(); if (b <= 0) break; bytes += b.toByte() }
+                while (bytes.size < MAX_STRING_BYTES) {
+                    val b = input.read()
+                    if (b <= 0) break
+                    bytes += b.toByte()
+                }
                 strings += bytes.toByteArray().toString(Charset.forName("UTF-8"))
             }
+
             val types = ArrayList<String>(typesSize)
-            for (i in 0 until typesSize) { input.seek(typesOff + i * 4L); types += strings.getOrElse(readUIntLE(input).toInt()) { "<invalid>" } }
+            for (i in 0 until typesSize) {
+                input.seek(typesOff + i * 4L)
+                types += strings.getOrElse(readUIntLE(input).toInt()) { "<invalid>" }
+            }
+
             val fields = ArrayList<String>(fieldsSize)
             for (i in 0 until fieldsSize) {
                 input.seek(fieldsOff + i * 8L)
-                val classIndex = readUShortLE(input); val typeIndex = readUShortLE(input); val nameIndex = readUIntLE(input).toInt()
+                val classIndex = readUShortLE(input)
+                val typeIndex = readUShortLE(input)
+                val nameIndex = readUIntLE(input).toInt()
                 fields += "${types.getOrElse(classIndex) { "?" }}->${strings.getOrElse(nameIndex) { "?" }}:${types.getOrElse(typeIndex) { "?" }}"
             }
+
             val methods = ArrayList<String>(methodsSize)
             for (i in 0 until methodsSize) {
                 input.seek(methodsOff + i * 8L)
-                val classIndex = readUShortLE(input); readUShortLE(input); val nameIndex = readUIntLE(input).toInt()
+                val classIndex = readUShortLE(input)
+                readUShortLE(input) // proto index; names remain compatible with the existing UI/search contract.
+                val nameIndex = readUIntLE(input).toInt()
                 methods += "${types.getOrElse(classIndex) { "?" }}->${strings.getOrElse(nameIndex) { "?" }}"
             }
+
             val classes = ArrayList<String>(classesSize)
-            for (i in 0 until classesSize) { input.seek(classesOff + i * 32L); classes += types.getOrElse(readUIntLE(input).toInt()) { "<invalid>" } }
-            DexSummary(name, strings, types, classes, methods, fields)
+            val classInfo = LinkedHashMap<String, DexClassInfo>(classesSize)
+            for (i in 0 until classesSize) {
+                input.seek(classesOff + i * 32L)
+                val classIndex = readUIntLE(input).toInt()
+                val accessFlags = readUIntLE(input)
+                val superIndexRaw = readUIntLE(input)
+                val interfacesOff = readUIntLE(input)
+                // Remaining class_def fields are not needed for navigation here.
+                val descriptor = types.getOrElse(classIndex) { "<invalid>" }
+                val superDescriptor = if (superIndexRaw == NO_INDEX) null else types.getOrNull(superIndexRaw.toInt())
+                val interfaces = readTypeList(input, interfacesOff, types)
+                classes += descriptor
+                classInfo[descriptor] = DexClassInfo(descriptor, superDescriptor, interfaces, accessFlags)
+            }
+            DexSummary(name, strings, types, classes, methods, fields, classInfo)
+        }
+
+        private fun readTypeList(input: RandomAccessFile, offset: Long, types: List<String>): List<String> {
+            if (offset == 0L) return emptyList()
+            require(offset in 0 until input.length()) { "Offset de interfaces inválido" }
+            val resume = input.filePointer
+            return try {
+                input.seek(offset)
+                val count = checkedCount(readUIntLE(input), "interfaces")
+                require(count <= 65_535) { "Lista de interfaces inválida" }
+                List(count) { types.getOrElse(readUShortLE(input)) { "<invalid>" } }
+            } finally {
+                input.seek(resume)
+            }
         }
 
         private fun checkedCount(value: Long, label: String): Int {
             require(value in 0..5_000_000L) { "Quantidade de $label inválida" }
             return value.toInt()
         }
+
         private fun readUIntLE(input: RandomAccessFile): Long = (input.readUnsignedByte().toLong() or
-            (input.readUnsignedByte().toLong() shl 8) or (input.readUnsignedByte().toLong() shl 16) or
+            (input.readUnsignedByte().toLong() shl 8) or
+            (input.readUnsignedByte().toLong() shl 16) or
             (input.readUnsignedByte().toLong() shl 24)) and 0xffffffffL
+
         private fun readUShortLE(input: RandomAccessFile): Int = input.readUnsignedByte() or (input.readUnsignedByte() shl 8)
+
         private fun readUleb128(input: RandomAccessFile): Int {
-            var result = 0; var shift = 0
-            repeat(5) { val b = input.readUnsignedByte(); result = result or ((b and 0x7f) shl shift); if (b and 0x80 == 0) return result; shift += 7 }
+            var result = 0
+            var shift = 0
+            repeat(5) {
+                val b = input.readUnsignedByte()
+                result = result or ((b and 0x7f) shl shift)
+                if (b and 0x80 == 0) return result
+                shift += 7
+            }
             throw EOFException("ULEB128 inválido")
         }
-        private fun <T> java.util.Enumeration<T>.asSequence(): Sequence<T> = sequence { while (hasMoreElements()) yield(nextElement()) }
+
+        private fun <T> java.util.Enumeration<T>.asSequence(): Sequence<T> = sequence {
+            while (hasMoreElements()) yield(nextElement())
+        }
+
+        private const val NO_INDEX = 0xffffffffL
         private const val MAX_STRING_BYTES = 4 * 1024 * 1024
         private const val MAX_DEX_BYTES = 128L * 1024 * 1024
         private const val MAX_TOTAL_BYTES = 256L * 1024 * 1024
