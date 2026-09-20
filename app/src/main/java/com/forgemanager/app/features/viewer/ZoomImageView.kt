@@ -7,13 +7,13 @@ import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
-import androidx.appcompat.widget.AppCompatImageView
+import android.widget.ImageView
 import kotlin.math.min
 
 class ZoomImageView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
-) : AppCompatImageView(context, attrs) {
+) : ImageView(context, attrs) {
     private val drawMatrix = Matrix()
     private var minimumScale = 1f
     private var maximumScale = 8f
@@ -46,7 +46,8 @@ class ZoomImageView @JvmOverloads constructor(
             if (matrixScale() > minimumScale * 1.25f) {
                 fitToScreen()
             } else {
-                val factor = ((minimumScale * 2.5f) / matrixScale()).coerceAtLeast(1f)
+                val current = matrixScale().coerceAtLeast(0.0001f)
+                val factor = ((minimumScale * 2.5f) / current).coerceAtLeast(1f)
                 drawMatrix.postScale(factor, factor, e.x, e.y)
                 constrain()
                 imageMatrix = drawMatrix
@@ -72,7 +73,9 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        parent?.requestDisallowInterceptTouchEvent(event.actionMasked != MotionEvent.ACTION_UP && event.actionMasked != MotionEvent.ACTION_CANCEL)
+        parent?.requestDisallowInterceptTouchEvent(
+            event.actionMasked != MotionEvent.ACTION_UP && event.actionMasked != MotionEvent.ACTION_CANCEL
+        )
         val scaled = scaler.onTouchEvent(event)
         val gestured = gestures.onTouchEvent(event)
         return scaled || gestured || super.onTouchEvent(event)
