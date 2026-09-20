@@ -232,7 +232,7 @@ class BinaryResourceEditorActivity : ForgeActivity() {
         val direct = location as? FileLocation.Direct
         if (direct != null && backend.id == "direct") {
             val target = File(direct.path)
-            val parent = target.parentFile ?: error("Pasta de destino inválida")
+            val parent = target.parentFile ?: throw IllegalStateException("Pasta de destino inválida")
             val temp = File(parent, ".${target.name}.${System.nanoTime()}.forge.tmp")
             try {
                 FileOutputStream(temp).use { output ->
