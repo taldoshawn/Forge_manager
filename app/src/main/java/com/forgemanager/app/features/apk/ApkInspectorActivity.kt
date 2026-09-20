@@ -6,16 +6,27 @@ import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.widget.Button
+import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.FileProvider
+import com.forgemanager.app.features.dex.SmaliWorkspaceActivity
 import com.forgemanager.app.features.explorer.FileListAdapter
+import com.forgemanager.app.features.resources.BinaryXmlEditorActivity
+import com.forgemanager.app.features.resources.ResourceTableActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
 import java.security.cert.CertificateFactory
@@ -23,6 +34,7 @@ import java.security.cert.X509Certificate
 import java.util.zip.ZipFile
 
 class ApkInspectorActivity : Activity() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var file: File
     private lateinit var output: TextView
 
@@ -33,15 +45,43 @@ class ApkInspectorActivity : Activity() {
         inspect()
     }
 
+    override fun onDestroy() { scope.cancel(); super.onDestroy() }
+
     private fun buildUi(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        val bar = LinearLayout(this@ApkInspectorActivity).apply { gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(Color.rgb(42,42,42)) }
-        bar.addView(Button(this@ApkInspectorActivity).apply { text = "←"; setTextColor(Color.WHITE); setBackgroundColor(Color.TRANSPARENT); setOnClickListener { finish() } })
-        bar.addView(TextView(this@ApkInspectorActivity).apply { text = file.name; setTextColor(Color.WHITE); textSize = 18f }, LinearLayout.LayoutParams(0,-2,1f))
-        bar.addView(Button(this@ApkInspectorActivity).apply { text = "Instalar"; setTextColor(Color.WHITE); setBackgroundColor(Color.TRANSPARENT); setOnClickListener { install() } })
-        addView(bar, LinearLayout.LayoutParams(-1, dp(54)))
-        output = TextView(this@ApkInspectorActivity).apply { setPadding(dp(14),dp(12),dp(14),dp(20)); setTextIsSelectable(true); textSize = 13f; setTextColor(Color.DKGRAY) }
-        addView(ScrollView(this@ApkInspectorActivity).apply { addView(output) }, LinearLayout.LayoutParams(-1,0,1f))
+        setBackgroundColor(Color.BLACK)
+        val bar = LinearLayout(this@ApkInspectorActivity).apply { gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(Color.BLACK) }
+        bar.addView(tool("←") { finish() })
+        bar.addView(TextView(this@ApkInspectorActivity).apply { text = file.name; setTextColor(Color.WHITE); textSize = 16f }, LinearLayout.LayoutParams(0,-2,1f))
+        bar.addView(tool("INSTALL") { install() })
+        addView(bar, LinearLayout.LayoutParams(-1, dp(52)))
+
+        addView(HorizontalScrollView(this@ApkInspectorActivity).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(LinearLayout(this@ApkInspectorActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(tool("SMALI") { startActivity(Intent(this@ApkInspectorActivity, SmaliWorkspaceActivity::class.java).putExtra(SmaliWorkspaceActivity.EXTRA_PATH, file.path)) })
+                addView(tool("MANIFEST") { startActivity(Intent(this@ApkInspectorActivity, BinaryXmlEditorActivity::class.java)
+                    .putExtra(BinaryXmlEditorActivity.EXTRA_APK_PATH, file.path).putExtra(BinaryXmlEditorActivity.EXTRA_ENTRY, "AndroidManifest.xml")) })
+                addView(tool("ARSC") { startActivity(Intent(this@ApkInspectorActivity, ResourceTableActivity::class.java).putExtra(ResourceTableActivity.EXTRA_APK_PATH, file.path)) })
+                addView(tool("ZIPALIGN") { showZipAlign() })
+                addView(tool("SIGN") { startActivity(Intent(this@ApkInspectorActivity, ApkSignerActivity::class.java).putExtra(ApkSignerActivity.EXTRA_APK_PATH, file.path)) })
+            })
+        }, LinearLayout.LayoutParams(-1, dp(48)))
+
+        output = TextView(this@ApkInspectorActivity).apply {
+            setPadding(dp(14),dp(12),dp(14),dp(20)); setTextIsSelectable(true); textSize = 13f
+            setTextColor(Color.rgb(205, 214, 224)); setBackgroundColor(Color.BLACK)
+        }
+        addView(ScrollView(this@ApkInspectorActivity).apply { setBackgroundColor(Color.BLACK); addView(output) }, LinearLayout.LayoutParams(-1,0,1f))
+    }
+
+    private fun tool(label: String, action: () -> Unit) = Button(this).apply {
+        text = label
+        textSize = 10f
+        setTextColor(Color.rgb(0, 190, 255))
+        setBackgroundColor(Color.TRANSPARENT)
+        setOnClickListener { action() }
     }
 
     @Suppress("DEPRECATION")
@@ -103,6 +143,22 @@ class ApkInspectorActivity : Activity() {
     }
 
     private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(":") { "%02X".format(it) }
+
+    private fun showZipAlign() {
+        val defaultOutput = File(file.parentFile, "${file.nameWithoutExtension}-aligned.apk")
+        val input = EditText(this).apply { setText(defaultOutput.path); setSingleLine() }
+        AlertDialog.Builder(this).setTitle("Zipalign 4-byte").setView(input)
+            .setMessage("Cria uma nova cópia alinhada. Reescrever o ZIP invalida assinaturas existentes; assine a saída depois.")
+            .setPositiveButton("Alinhar") { _, _ ->
+                val destination = File(input.text.toString())
+                output.text = "Executando zipalign…\n\n${output.text}"
+                scope.launch {
+                    runCatching { withContext(Dispatchers.IO) { ZipAligner.align(file, destination, 4) } }
+                        .onSuccess { result -> Toast.makeText(this@ApkInspectorActivity, "Zipalign concluído: ${result.entries} entradas", Toast.LENGTH_LONG).show() }
+                        .onFailure { AlertDialog.Builder(this@ApkInspectorActivity).setTitle("Zipalign").setMessage(it.message ?: "Falha").setPositiveButton("OK", null).show() }
+                }
+            }.setNegativeButton("Cancelar", null).show()
+    }
 
     private fun install() {
         runCatching {
