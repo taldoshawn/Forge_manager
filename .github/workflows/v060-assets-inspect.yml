@@ -1,0 +1,27 @@
+name: V060 asset inspect
+on:
+  push:
+    branches: [ v060-ui-formats ]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect candidate chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in .v060-assets/chunk*; do
+            echo "=== $f ==="
+            wc -c "$f"
+            file "$f" || true
+            xxd -l 24 "$f" || true
+            sha256sum "$f"
+          done
+          cat .v060-assets/chunk00 .v060-assets/chunk01 .v060-assets/chunk02 .v060-assets/chunk03 .v060-assets/chunk04 .v060-assets/chunk05 > /tmp/all.bin
+          echo "=== all ==="
+          wc -c /tmp/all.bin
+          file /tmp/all.bin || true
+          sha256sum /tmp/all.bin
