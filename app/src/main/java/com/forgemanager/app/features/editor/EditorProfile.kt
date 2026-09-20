@@ -19,6 +19,37 @@ data class EditorProfile(
     val indentationAfterColon: Boolean = false
 ) {
     companion object {
+        fun forLanguage(language: EditorLanguage): EditorProfile = forFile("file.${extensionFor(language)}")
+
+        fun extensionFor(language: EditorLanguage): String = when (language) {
+            EditorLanguage.PLAIN -> "txt"
+            EditorLanguage.XML -> "xml"
+            EditorLanguage.JSON -> "json"
+            EditorLanguage.YAML -> "yaml"
+            EditorLanguage.TOML -> "toml"
+            EditorLanguage.PYTHON -> "py"
+            EditorLanguage.JAVA -> "java"
+            EditorLanguage.KOTLIN -> "kt"
+            EditorLanguage.SMALI -> "smali"
+            EditorLanguage.HTML -> "html"
+            EditorLanguage.MARKDOWN -> "md"
+            EditorLanguage.CSS -> "css"
+            EditorLanguage.JAVASCRIPT -> "js"
+            EditorLanguage.TYPESCRIPT -> "ts"
+            EditorLanguage.C -> "c"
+            EditorLanguage.CPP -> "cpp"
+            EditorLanguage.CSHARP -> "cs"
+            EditorLanguage.RUST -> "rs"
+            EditorLanguage.GO -> "go"
+            EditorLanguage.PHP -> "php"
+            EditorLanguage.RUBY -> "rb"
+            EditorLanguage.SWIFT -> "swift"
+            EditorLanguage.DART -> "dart"
+            EditorLanguage.SHELL -> "sh"
+            EditorLanguage.SQL -> "sql"
+            EditorLanguage.LUA -> "lua"
+        }
+
         fun forFile(name: String): EditorProfile {
             val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
             val common = listOf("TAB", "(", ")", "[", "]", "{", "}", "=", "\"")
