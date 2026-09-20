@@ -7,8 +7,27 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <queries><package android:name="moe.shizuku.privileged.api"/><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="content"/></intent></queries>
-    <application android:name=".ForgeApplication" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="false" android:icon="@drawable/ic_app_brand" android:roundIcon="@drawable/ic_app_brand" android:label="Forge Manager" android:requestLegacyExternalStorage="false" android:supportsRtl="true" android:theme="@style/Theme.ForgeManager" android:usesCleartextTraffic="false">
+
+    <queries>
+        <package android:name="moe.shizuku.privileged.api" />
+        <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="content"/></intent>
+    </queries>
+
+    <application
+        android:name=".ForgeApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@drawable/fm_app_icon_v3"
+        android:roundIcon="@drawable/fm_app_icon_v3"
+        android:label="Forge Manager"
+        android:requestLegacyExternalStorage="false"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ForgeManager"
+        android:usesCleartextTraffic="false">
+
+        <activity android:name=".features.settings.SettingsActivity" android:exported="false" />
+        <activity android:name=".features.torrent.TorrentInspectorActivity" android:exported="false" />
         <activity android:name=".features.browser.ForgeBrowserActivity" android:exported="false" />
         <activity android:name=".features.disk.DiskImageActivity" android:exported="false" />
         <activity android:name=".features.apktools.ApkToolboxActivity" android:exported="false" />
@@ -24,8 +43,28 @@
         <activity android:name=".features.editor.HexViewerActivity" android:exported="false" />
         <activity android:name=".features.editor.TextEditorActivity" android:exported="false" />
         <activity android:name=".features.compare.TextCompareActivity" android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
-        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths"/></provider>
-        <provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="${applicationId}.shizuku" android:enabled="true" android:exported="true" android:multiprocess="false" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>

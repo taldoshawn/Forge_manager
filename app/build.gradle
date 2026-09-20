@@ -10,15 +10,12 @@ android {
         applicationId = 'com.forgemanager.app'
         minSdk = 26
         targetSdk = 37
-        versionCode = 7
-        versionName = '0.5.0'
+        versionCode = 8
+        versionName = '0.6.0'
         testInstrumentationRunner = 'android.test.InstrumentationTestRunner'
     }
 
-    buildFeatures {
-        aidl = true
-        buildConfig = true
-    }
+    buildFeatures { aidl = true; buildConfig = true }
 
     externalNativeBuild {
         cmake {
@@ -33,13 +30,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    testOptions {
-        unitTests.returnDefaultValues = true
-    }
+    testOptions { unitTests.returnDefaultValues = true }
 
-    packaging {
-        resources.excludes += ['META-INF/AL2.0', 'META-INF/LGPL2.1']
-    }
+    packaging { resources.excludes += ['META-INF/AL2.0', 'META-INF/LGPL2.1'] }
 }
 
 dependencies {

@@ -47,6 +47,10 @@ import com.forgemanager.app.features.dex.DexInspectorActivity
 import com.forgemanager.app.features.dex.SmaliStudioActivity
 import com.forgemanager.app.features.disk.DiskImageActivity
 import com.forgemanager.app.features.resources.BinaryResourceEditorActivity
+import com.forgemanager.app.features.resources.ApkResourceStudioActivity
+import com.forgemanager.app.features.settings.SettingsActivity
+import com.forgemanager.app.features.settings.UiPreferences
+import com.forgemanager.app.features.torrent.TorrentInspectorActivity
 import com.forgemanager.app.features.explorer.DualPaneController
 import com.forgemanager.app.features.explorer.FileKind
 import com.forgemanager.app.features.explorer.FileListAdapter
@@ -99,11 +103,15 @@ class MainActivity : Activity() {
         val initialPath = intent.getStringExtra(EXTRA_OPEN_PATH)?.takeIf { it.isNotBlank() } ?: Environment.getExternalStorageDirectory().path
         val initial = FileLocation.Direct(initialPath)
         controller = DualPaneController(initial, initial)
+        val showHiddenDefault = UiPreferences.showHiddenDefault(this)
+        controller.pane(PaneId.LEFT).showHidden = showHiddenDefault
+        controller.pane(PaneId.RIGHT).showHidden = showHiddenDefault
         activePath = findViewById(R.id.activePath)
         folderInfo = findViewById(R.id.folderInfo)
         leftUi = bindPane(PaneId.LEFT, findViewById(R.id.leftPane))
         rightUi = bindPane(PaneId.RIGHT, findViewById(R.id.rightPane))
         bindToolbar()
+        applyUiPreferences()
         activate(PaneId.LEFT)
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
         requestInitialStorageAccess()
@@ -119,7 +127,12 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (::controller.isInitialized) refresh(controller.activePane)
+        if (::controller.isInitialized) {
+            applyUiPreferences()
+            leftUi.adapter.notifyDataSetChanged()
+            rightUi.adapter.notifyDataSetChanged()
+            refresh(controller.activePane)
+        }
     }
 
     @Deprecated("Android back compatibility")
@@ -295,7 +308,43 @@ class MainActivity : Activity() {
         controller.activate(id)
         leftUi.header.setBackgroundResource(if (id == PaneId.LEFT) R.drawable.bg_pane_header_active else R.drawable.bg_pane_header)
         rightUi.header.setBackgroundResource(if (id == PaneId.RIGHT) R.drawable.bg_pane_header_active else R.drawable.bg_pane_header)
+        applyPaneAccent(id)
         updateHeader()
+    }
+
+    private fun applyUiPreferences() {
+        val surface = UiPreferences.surface(this)
+        val elevated = UiPreferences.elevatedSurface(this)
+        val accent = UiPreferences.accent(this)
+        window.statusBarColor = surface
+        window.navigationBarColor = surface
+        findViewById<View>(R.id.root).setBackgroundColor(surface)
+        findViewById<View>(R.id.topBar).backgroundTintList = android.content.res.ColorStateList.valueOf(elevated)
+        findViewById<View>(R.id.bottomBar).backgroundTintList = android.content.res.ColorStateList.valueOf(elevated)
+        if (::leftUi.isInitialized) {
+            leftUi.root.setBackgroundColor(surface)
+            rightUi.root.setBackgroundColor(surface)
+            leftUi.list.setBackgroundColor(surface)
+            rightUi.list.setBackgroundColor(surface)
+            applyPaneAccent(controller.activePane)
+        }
+        findViewById<android.widget.ImageButton>(R.id.createButton).imageTintList = android.content.res.ColorStateList.valueOf(accent)
+        if (::folderInfo.isInitialized) folderInfo.setTextColor(accent)
+    }
+
+    private fun applyPaneAccent(id: PaneId) {
+        if (!::leftUi.isInitialized) return
+        val accent = UiPreferences.accent(this)
+        val elevated = UiPreferences.elevatedSurface(this)
+        val active = android.graphics.Color.rgb(
+            (android.graphics.Color.red(accent) * 0.22f).toInt().coerceIn(0, 255),
+            (android.graphics.Color.green(accent) * 0.22f).toInt().coerceIn(0, 255),
+            (android.graphics.Color.blue(accent) * 0.22f).toInt().coerceIn(0, 255)
+        )
+        leftUi.header.backgroundTintList = android.content.res.ColorStateList.valueOf(if (id == PaneId.LEFT) active else elevated)
+        rightUi.header.backgroundTintList = android.content.res.ColorStateList.valueOf(if (id == PaneId.RIGHT) active else elevated)
+        leftUi.path.setTextColor(if (id == PaneId.LEFT) accent else android.graphics.Color.rgb(132, 143, 158))
+        rightUi.path.setTextColor(if (id == PaneId.RIGHT) accent else android.graphics.Color.rgb(132, 143, 158))
     }
 
     private fun updateHeader() {
@@ -316,15 +365,21 @@ class MainActivity : Activity() {
             val archivePath = node.location.path
             if (extension == "apk") {
                 AlertDialog.Builder(this).setTitle(node.name)
-                    .setItems(arrayOf("Abrir como ZIP", "APK Toolbox", "Informações do APK", "Abrir com…")) { _, which ->
+                    .setItems(arrayOf("Abrir como ZIP", "Resource Studio", "APK Toolbox / Assinar", "Informações do APK", "DEX Inspector", "Abrir com…")) { _, which ->
                         when (which) {
                             0 -> navigate(id, FileLocation.Archive(archivePath))
-                            1 -> startActivity(Intent(this, ApkToolboxActivity::class.java).putExtra(ApkToolboxActivity.EXTRA_APK_PATH, archivePath))
-                            2 -> startActivity(Intent(this, ApkInspectorActivity::class.java).putExtra("path", archivePath))
-                            3 -> openWith(node)
+                            1 -> startActivity(Intent(this, ApkResourceStudioActivity::class.java).putExtra(ApkResourceStudioActivity.EXTRA_APK_PATH, archivePath))
+                            2 -> startActivity(Intent(this, ApkToolboxActivity::class.java).putExtra(ApkToolboxActivity.EXTRA_APK_PATH, archivePath))
+                            3 -> startActivity(Intent(this, ApkInspectorActivity::class.java).putExtra("path", archivePath))
+                            4 -> startActivity(Intent(this, DexInspectorActivity::class.java).putExtra("path", archivePath))
+                            5 -> openWith(node)
                         }
                     }.show()
-            } else navigate(id, FileLocation.Archive(archivePath))
+            } else if (UiPreferences.openArchivesInternally(this)) {
+                navigate(id, FileLocation.Archive(archivePath))
+            } else {
+                openWith(node)
+            }
             return
         }
 
@@ -360,8 +415,11 @@ class MainActivity : Activity() {
             }
             FileKind.BINARY_RESOURCE -> startActivity(Intent(this, BinaryResourceEditorActivity::class.java).putFileLocation(node.location, node.name))
             FileKind.DISK_IMAGE -> startActivity(Intent(this, DiskImageActivity::class.java).putFileLocation(node.location, node.name))
+            FileKind.SUBTITLE -> openTextEditor(node)
+            FileKind.TORRENT -> startActivity(Intent(this, TorrentInspectorActivity::class.java).putFileLocation(node.location, node.name))
+            FileKind.KEY, FileKind.CERTIFICATE, FileKind.BACKUP -> showTextHexOpenDialog(node)
             FileKind.VIDEO, FileKind.AUDIO, FileKind.PDF, FileKind.DOCUMENT, FileKind.SPREADSHEET,
-            FileKind.PRESENTATION, FileKind.FONT, FileKind.CERTIFICATE -> openWith(node)
+            FileKind.PRESENTATION, FileKind.FONT, FileKind.LINUX_PACKAGE, FileKind.MODEL3D -> openWith(node)
             FileKind.EXECUTABLE, FileKind.DATABASE -> openHexEditor(node)
             FileKind.APK, FileKind.ARCHIVE -> openWith(node)
             FileKind.GENERIC -> {
@@ -463,6 +521,17 @@ class MainActivity : Activity() {
             FileKind.DATABASE, FileKind.EXECUTABLE -> openHexEditor(node)
             else -> openWith(node)
         }
+    }
+
+    private fun showTextHexOpenDialog(node: FileNode) {
+        AlertDialog.Builder(this).setTitle(node.name)
+            .setItems(arrayOf("Visualizar/editar como texto", "Editor hexadecimal", "Abrir com…")) { _, which ->
+                when (which) {
+                    0 -> openTextEditor(node)
+                    1 -> openHexEditor(node)
+                    2 -> openWith(node)
+                }
+            }.show()
     }
 
     private fun handleBackNavigation() {
@@ -666,12 +735,22 @@ class MainActivity : Activity() {
     }
 
     private fun confirmDelete(items: List<FileNode>) {
+        if (!UiPreferences.confirmDelete(this)) {
+            deleteItems(items)
+            return
+        }
         AlertDialog.Builder(this).setTitle("Excluir ${items.size} item(ns)?")
             .setMessage("A exclusão é permanente e não pode ser desfeita.")
-            .setPositiveButton("Excluir") { _, _ -> scope.launch {
-                runCatching { withContext(Dispatchers.IO) { items.forEach { graph.resolver.backendFor(it.location, write = true).delete(it.location) } } }
-                    .onSuccess { controller.pane().selection.clear(); refresh(controller.activePane) }.onFailure(::showError)
-            }}.setNegativeButton("Cancelar", null).show()
+            .setPositiveButton("Excluir") { _, _ -> deleteItems(items) }
+            .setNegativeButton("Cancelar", null).show()
+    }
+
+    private fun deleteItems(items: List<FileNode>) {
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { items.forEach { graph.resolver.backendFor(it.location, write = true).delete(it.location) } } }
+                .onSuccess { controller.pane().selection.clear(); refresh(controller.activePane) }
+                .onFailure(::showError)
+        }
     }
 
     private fun showInfo(items: List<FileNode>) {
@@ -792,6 +871,7 @@ class MainActivity : Activity() {
             menu.add("Aplicativos instalados")
             menu.add("Forge Web")
             menu.add("Terminal PTY")
+            menu.add("Configurações")
             menu.add("Adicionar bookmark")
             menu.add("Bookmarks")
             menu.add(graph.shizuku.status())
@@ -811,6 +891,7 @@ class MainActivity : Activity() {
                         val working = (controller.pane().current as? FileLocation.Direct)?.path ?: Environment.getExternalStorageDirectory().path
                         startActivity(Intent(this@MainActivity, TerminalActivity::class.java).putExtra(TerminalActivity.EXTRA_WORKING_DIRECTORY, working))
                     }
+                    it.title == "Configurações" -> startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
                     it.title == "Adicionar bookmark" -> addBookmark()
                     it.title == "Bookmarks" -> showBookmarks()
                     it.title.toString().startsWith("Shizuku") -> requestShizuku()
@@ -828,6 +909,7 @@ class MainActivity : Activity() {
             menu.add("Pesquisar/filtrar")
             menu.add("Ir para caminho")
             menu.add("Copiar caminho atual")
+            menu.add("Configurações")
             menu.add("Ordenar por nome")
             menu.add("Ordenar por tipo")
             menu.add("Ordenar por tamanho")
@@ -839,6 +921,7 @@ class MainActivity : Activity() {
                     "Pesquisar/filtrar" -> showFilterDialog()
                     "Ir para caminho" -> showPathJump()
                     "Copiar caminho atual" -> copyToClipboard("Caminho", controller.pane().current.displayPath)
+                    "Configurações" -> startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
                     "Ordenar por nome" -> setSort(SortField.NAME)
                     "Ordenar por tipo" -> setSort(SortField.TYPE)
                     "Ordenar por tamanho" -> setSort(SortField.SIZE)
