@@ -260,7 +260,8 @@ class ApkResourceStudioActivity : ForgeActivity() {
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val input = contentResolver.openInputStream(uri) ?: error("Não foi possível abrir o arquivo selecionado")
+                    val input = contentResolver.openInputStream(uri)
+                        ?: throw IllegalStateException("Não foi possível abrir o arquivo selecionado")
                     input.use { source ->
                         graph.archive.openOutput(FileLocation.Archive(apk.path, entry.name), true).use { output ->
                             source.copyTo(output, 128 * 1024)
