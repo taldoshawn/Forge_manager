@@ -1,0 +1,2 @@
+-keep class com.forgemanager.app.shizuku.PrivilegedFileService { *; }
+-keep class com.forgemanager.app.shizuku.IPrivilegedFileService { *; }
