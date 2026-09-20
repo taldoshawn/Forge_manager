@@ -59,6 +59,8 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.zip.CRC32
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -340,7 +342,12 @@ class MainActivity : Activity() {
             "Selecionar mesmo tipo",
             "Cancelar seleção"
         )
-        if (items.size == 1) labels.add(2, "Renomear")
+        if (items.size == 1) {
+            labels.add(2, "Renomear")
+            if (items.single().location is FileLocation.Direct && graph.root.isAuthorized()) {
+                labels.add(3, "Permissões (chmod)")
+            }
+        }
         if (items.size == 2) {
             labels.add(4, "Trocar nomes")
             labels.add(5, "Comparar texto")
@@ -350,6 +357,7 @@ class MainActivity : Activity() {
                 "Copiar → outro painel" -> chooseConflictPolicy { runTransfer(false, it) }
                 "Mover → outro painel" -> chooseConflictPolicy { runTransfer(true, it) }
                 "Renomear" -> showRename(items.single())
+                "Permissões (chmod)" -> showChmod(items.single())
                 "Duplicar aqui" -> duplicateHere(items)
                 "Trocar nomes" -> swapNames(items)
                 "Comparar texto" -> compareText(items)
@@ -516,6 +524,31 @@ class MainActivity : Activity() {
                 graph.resolver.backendFor(node.location, write = true).rename(node.location, input.text.toString())
             }}.onSuccess { refresh(controller.activePane) }.onFailure(::showError) }
         }.setNegativeButton("Cancelar", null).show()
+    }
+
+    private fun showChmod(node: FileNode) {
+        if (node.location !is FileLocation.Direct || !graph.root.isAuthorized()) {
+            toast("Autorize root para alterar permissões")
+            return
+        }
+        val currentMode = node.permissions?.substringAfter('(')?.substringBefore(')')?.takeIf { it.matches(Regex("^[0-7]{3,4}$")) }.orEmpty()
+        val input = EditText(this).apply {
+            setText(currentMode)
+            setSelection(text.length)
+            hint = "644 ou 0755"
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        AlertDialog.Builder(this).setTitle("Permissões Unix (chmod)").setView(input)
+            .setMessage("Use somente modo octal. A alteração é executada via root já autorizado.")
+            .setPositiveButton("Aplicar") { _, _ ->
+                val mode = input.text.toString().trim()
+                scope.launch {
+                    runCatching { withContext(Dispatchers.IO) { graph.root.chmod(node.location, mode) } }
+                        .onSuccess { refresh(controller.activePane); toast("Permissões atualizadas") }
+                        .onFailure(::showError)
+                }
+            }.setNegativeButton("Cancelar", null).show()
     }
 
     private fun confirmDelete(items: List<FileNode>) {
@@ -733,22 +766,83 @@ class MainActivity : Activity() {
     }
 
     private fun addBookmark() {
-        val location = controller.pane().current
-        if (location !is FileLocation.Direct) { toast("Bookmarks SAF/archive serão adicionados em uma versão futura"); return }
         val preferences = getSharedPreferences("bookmarks", MODE_PRIVATE)
-        val values = preferences.getStringSet("paths", emptySet()).orEmpty().toMutableSet()
-        values += location.path
-        preferences.edit().putStringSet("paths", values).apply()
+        val entries = readBookmarks().map(::encodeBookmark).toMutableSet()
+        entries += encodeBookmark(controller.pane().current)
+        preferences.edit().putStringSet("entries_v2", entries).remove("paths").apply()
         toast("Bookmark adicionado")
     }
 
     private fun showBookmarks() {
-        val values = getSharedPreferences("bookmarks", MODE_PRIVATE).getStringSet("paths", emptySet()).orEmpty().sorted()
+        val values = readBookmarks().distinctBy { it.displayPath }.sortedBy { it.displayPath.lowercase(Locale.ROOT) }
         if (values.isEmpty()) { toast("Nenhum bookmark"); return }
-        AlertDialog.Builder(this).setTitle("Bookmarks").setItems(values.toTypedArray()) { _, which ->
-            navigate(controller.activePane, FileLocation.Direct(values[which]))
+        AlertDialog.Builder(this).setTitle("Bookmarks").setItems(values.map { it.displayPath }.toTypedArray()) { _, which ->
+            navigate(controller.activePane, values[which])
         }.setNegativeButton("Fechar", null).show()
     }
+
+    private fun readBookmarks(): List<FileLocation> {
+        val preferences = getSharedPreferences("bookmarks", MODE_PRIVATE)
+        val encoded = preferences.getStringSet("entries_v2", emptySet()).orEmpty()
+        val migrated = if (encoded.isEmpty()) {
+            preferences.getStringSet("paths", emptySet()).orEmpty().map { FileLocation.Direct(it) }
+        } else emptyList()
+        val decoded = encoded.mapNotNull(::decodeBookmark)
+        val combined = (decoded + migrated).distinctBy { it.displayPath }
+        if (migrated.isNotEmpty()) {
+            preferences.edit().putStringSet("entries_v2", combined.map(::encodeBookmark).toSet()).remove("paths").apply()
+        }
+        return combined
+    }
+
+    private fun encodeBookmark(location: FileLocation): String = JSONObject().apply {
+        put("v", 2)
+        when (location) {
+            is FileLocation.Direct -> {
+                put("type", "direct")
+                put("path", location.path)
+            }
+            is FileLocation.Archive -> {
+                put("type", "archive")
+                put("archivePath", location.archivePath)
+                put("entryPath", location.entryPath)
+            }
+            is FileLocation.Saf -> {
+                put("type", "saf")
+                put("documentUri", location.documentUri)
+                put("treeUri", location.treeUri)
+                put("displayPath", location.displayPath)
+                put("parents", JSONArray().apply {
+                    location.parents.forEach { parent ->
+                        put(JSONObject().put("documentUri", parent.documentUri).put("displayPath", parent.displayPath))
+                    }
+                })
+            }
+        }
+    }.toString()
+
+    private fun decodeBookmark(raw: String): FileLocation? = runCatching {
+        val json = JSONObject(raw)
+        when (json.getString("type")) {
+            "direct" -> FileLocation.Direct(json.getString("path"))
+            "archive" -> FileLocation.Archive(json.getString("archivePath"), json.optString("entryPath"))
+            "saf" -> {
+                val parentJson = json.optJSONArray("parents") ?: JSONArray()
+                val parents = ArrayList<com.forgemanager.app.core.file.SafParent>(parentJson.length())
+                for (index in 0 until parentJson.length()) {
+                    val value = parentJson.getJSONObject(index)
+                    parents += com.forgemanager.app.core.file.SafParent(value.getString("documentUri"), value.getString("displayPath"))
+                }
+                FileLocation.Saf(
+                    documentUri = json.getString("documentUri"),
+                    treeUri = json.getString("treeUri"),
+                    parents = parents,
+                    displayPath = json.getString("displayPath")
+                )
+            }
+            else -> null
+        }
+    }.getOrNull()
 
     private fun requestLegacyPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {

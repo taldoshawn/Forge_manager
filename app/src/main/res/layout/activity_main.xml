@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/fm_background">
+
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="62dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/fm_top"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <ImageButton
+            android:id="@+id/menuButton"
+            style="@style/TopIconButton"
+            android:contentDescription="@string/menu"
+            android:src="@drawable/ic_nav_menu"
+            android:tint="#FFFFFFFF" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:paddingStart="7dp"
+            android:paddingEnd="4dp">
+
+            <TextView
+                android:id="@+id/activePath"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="middle"
+                android:maxLines="1"
+                android:text="/storage/emulated/0"
+                android:textColor="#FFFFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/folderInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/fm_top_secondary"
+                android:textSize="10.5sp" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/moreButton"
+            style="@style/TopIconButton"
+            android:contentDescription="@string/more"
+            android:src="@drawable/ic_nav_more"
+            android:tint="#FFFFFFFF" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/panes"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:baselineAligned="false"
+        android:orientation="horizontal">
+
+        <include
+            android:id="@+id/leftPane"
+            layout="@layout/view_file_pane"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="@color/fm_divider" />
+
+        <include
+            android:id="@+id/rightPane"
+            layout="@layout/view_file_pane"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="54dp"
+        android:background="@drawable/bg_bottom_bar"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/backButton"
+            style="@style/BottomIconButton"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_nav_back"
+            android:tint="#FF42464D" />
+
+        <ImageButton
+            android:id="@+id/forwardButton"
+            style="@style/BottomIconButton"
+            android:contentDescription="@string/forward"
+            android:src="@drawable/ic_nav_forward"
+            android:tint="#FF42464D" />
+
+        <ImageButton
+            android:id="@+id/createButton"
+            style="@style/BottomIconButton"
+            android:contentDescription="@string/create"
+            android:src="@drawable/ic_nav_add"
+            android:tint="#FF1976D2" />
+
+        <ImageButton
+            android:id="@+id/syncButton"
+            style="@style/BottomIconButton"
+            android:contentDescription="@string/sync"
+            android:src="@drawable/ic_nav_sync"
+            android:tint="#FF42464D" />
+
+        <ImageButton
+            android:id="@+id/upButton"
+            style="@style/BottomIconButton"
+            android:contentDescription="@string/up"
+            android:src="@drawable/ic_nav_up"
+            android:tint="#FF42464D" />
+    </LinearLayout>
+</LinearLayout>

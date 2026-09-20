@@ -1,0 +1,49 @@
+# Matriz de paridade com MT Manager
+
+Fontes oficiais revisadas em 19/09/2026. Nesta revisão, a validação Android completa não pôde terminar porque o ambiente não conseguiu baixar o Gradle; XMLs e utilitários Kotlin puros foram validados localmente. Itens dependentes de Android real permanecem marcados para teste físico.
+
+| Feature | Categoria | Comportamento observado/documentado | Fonte | Planejamento de implementação | Status | Teste necessário | Implementado? | Observações |
+|---|---|---|---|---|---|---|---|---|
+| Dois painéis | Arquivos | Listas esquerda/direita simultâneas | [Manual](https://mt.cc/guide/) | `DualPaneController` + duas ListViews | Código integrado | unitário + dispositivo | Sim | Estado independente |
+| Operação painel a painel | Arquivos | Copiar/mover sem etapa “colar” | [Manual](https://mt.cc/guide/) | `FileOperations` usa outro painel | Código integrado | arquivos grandes/conflitos | Sim | Streaming e cancelamento |
+| Sincronizar painéis | Arquivos | Outro painel recebe localização ativa | [Manual](https://mt.cc/guide/) | `syncFromActive` | Código integrado | histórico após sync | Sim | Archive sincroniza para localização equivalente em evolução |
+| Voltar/avançar | Arquivos | Histórico por janela | [Site oficial](https://mt.cc/) | pilhas por `PaneState` | Código integrado | unitário | Sim | Independente por painel |
+| Multisseleção por swipe | Arquivos | Swipe seleciona; dois extremos selecionam faixa | [Manual](https://mt.cc/guide/) | touch horizontal + âncora de faixa | Código integrado | instrumentado/touch | Sim | Long press também funciona |
+| Selecionar tudo/inverter/tipo | Arquivos | Ações no modo seleção | [Manual](https://mt.cc/guide/) | métodos do controller | Código integrado | unitário | Sim | Tipo por extensão/diretório |
+| Filtro/regex/negação | Arquivos | texto, `!`, `/regex`, `!/regex` | [Manual](https://mt.cc/guide/) | filtro por painel | Código integrado | regex inválida/Unicode | Sim | Long press no sincronizar |
+| Salto de caminho | Arquivos | Long press em pasta pai | [Manual](https://mt.cc/guide/) | diálogo de caminho | Código integrado | caminho bloqueado | Sim | Caminho direto |
+| Bookmarks | Arquivos | Caminhos/arquivos favoritos por gesto | [Manual](https://mt.cc/guide/) | SharedPreferences com serialização versionada de `Direct`/`SAF`/`Archive` | Código integrado | persistência/migração | Sim | Migra formato legado de caminhos diretos |
+| Criar/renomear/excluir | Arquivos | Operações normais e dentro de ZIP | [ZIP](https://mt.cc/guide/file/archive-file.html) | todos os backends | Código integrado | nomes/symlink/recursão | Sim | confirmação de delete |
+| Conflitos | Arquivos | substituir/ignorar/renomear/cancelar | Especificação do projeto | `ConflictPolicy` antes da operação | Código integrado | unitário + UI | Sim | Nunca sobrescreve silenciosamente |
+| Hash | Ferramentas | Hex oferece MD5/SHA1/CRC32 | [Hex](https://mt.cc/guide/file/hex-editor.html) | MD5, SHA-1, SHA-256 e CRC32 de arquivos | Código integrado | arquivos grandes | Sim | Leitura por streaming |
+| Root | Arquivos | Amplia `/data` e sistema; cautela | [Root](https://mt.cc/guide/file/root.html) | backend opt-in, escape/timeout | Código integrado | Magisk/OEM | Sim | Varia por SELinux |
+| chmod/permissões | Arquivos | Editar permissões Unix quando acesso privilegiado está disponível | [Root](https://mt.cc/guide/file/root.html) | modo octal validado + backend root autorizado | Código integrado | Magisk/OEM/SELinux | Sim | Não aceita modo arbitrário nem executa sem root explícito |
+| Shizuku | Arquivos | Não descrito no manual MT consultado | [Shizuku oficial](https://github.com/RikkaApps/Shizuku-API) | UserService AIDL + PFD | Código integrado | ADB/Sui/restart | Sim | UID shell não equivale a root |
+| SAF | Armazenamento | API Android para árvores autorizadas | [Android](https://developer.android.com/about/versions/11/privacy/storage) | `SafFileBackend` | Código integrado | providers/OEM | Sim | URI persistente |
+| Android/data/obb | Armazenamento | MT alerta que contorno não é garantido | [Root MT](https://mt.cc/guide/file/root.html) | direto → SAF concedido → Shizuku → root | Código integrado | matriz Android/OEM | Parcial | Plataforma pode bloquear |
+| All files access | Armazenamento | Caso permitido para file manager | [Android](https://developer.android.com/training/data-storage/manage-all-files) | fluxo contextual oficial | Código integrado | Android 11–17 | Sim | Não libera dados privados de outros apps |
+| ZIP/JAR/APK navegável | Compactados | Navegar sem extrair | [ZIP](https://mt.cc/guide/file/archive-file.html) | `ArchiveFileBackend` + criação ZIP painel-a-painel | Código integrado | ZIP grande/malicioso | Sim | ZIP/JAR/APK e contêineres ZIP comuns |
+| Adicionar/substituir/excluir/renomear ZIP | Compactados | Atualização de entradas | [ZIP](https://mt.cc/guide/file/archive-file.html) | reescrita segura/atômica | Código integrado | CRC/nomes Unicode | Sim | Não promete atualização incremental binária |
+| 7z/tar/tar.gz/tar.bz2 | Compactados | MT cria esses formatos | [ZIP](https://mt.cc/guide/file/archive-file.html) | avaliar bibliotecas atuais/licenças | Pendente | corpus por formato | Não | Não inventado |
+| Proteção Zip Slip | Segurança | Requisito do projeto | Android secure coding | `ZipSecurity` | Código integrado | unitário | Sim | Rejeita absoluto/`..`/backslash |
+| Editor de texto | Editor | multi-arquivo, caracteres, seleção, modo fluido | [Texto](https://mt.cc/guide/file/text-editor.html) | editor nativo limitado e seguro | Parcial | encoding/arquivo grande | Parcial | Multi-arquivo/syntax avançada pendentes |
+| Busca/replace/regex | Editor | busca/substituição e recursos por sintaxe | [Texto](https://mt.cc/guide/file/text-editor.html) | busca e replace, regex com `/` | Código integrado | regex/Unicode | Sim | Highlight avançado pendente |
+| Hex paginado | Editor | visualizar/editar, buscar/inspecionar | [Hex](https://mt.cc/guide/file/hex-editor.html) | RAF em páginas + editar byte | Parcial | offsets >2 GiB | Parcial | Busca/replace de bytes pendente |
+| Comparador de texto | Comparação | destaca adições/remoções | [Comparadores](https://mt.cc/guide/file/file-comparator.html) | diff LCS limitado + fallback linear seguro | Código integrado | textos grandes/Unicode | Sim | Dois arquivos locais; evita matriz O(n*m) acima do limite |
+| DEX/ARSC/AXML/ZIP/pasta compare | Comparação | comparadores especializados | [Comparadores](https://mt.cc/guide/file/file-comparator.html) | comparar modelos semânticos | Pendente | corpus real | Não | ZIP estrutural também pendente |
+| Informações de APK | APK | manifest, DEX, resources, lib, assets | [APK](https://mt.cc/guide/reverse/apk.html) | PackageManager + ZipFile | Código integrado | APK v1/v2/splits | Sim | Componentes/permissões/certificado |
+| Apps instalados | APK | ferramenta de apps | Especificação do projeto | PackageManager + export splits | Código integrado | work profile/splits | Sim | Desinstalação oficial |
+| Instalação APK | APK | fluxo de instalação | API Android | FileProvider + instalador oficial | Código integrado | Android 8–17 | Sim | Não silenciosa |
+| DEX múltiplo | Reverse | abre classes.dex, classes2.dex… | [DEX](https://mt.cc/guide/reverse/dex.html) | `DexWorkspace` | Código integrado | DEX corrompido/multi | Parcial | Leitura/análise, sem rebuild |
+| Classes/métodos/campos/strings | Reverse | navegação e buscas | [DEX](https://mt.cc/guide/reverse/dex.html) | parser real de ID tables | Código integrado | corpus DEX | Parcial | Não usa regex para fingir bytecode |
+| Smali editor/rebuild | Reverse | edição, compilação, erros por linha | [DEX](https://mt.cc/guide/reverse/dex.html) | integrar dexlib2/smali | Pendente | round-trip/verifier | Não | Alta prioridade |
+| Navegação/xrefs | Reverse | jump classe/método/campo/label e chamadas | [DEX](https://mt.cc/guide/reverse/dex.html) | índice de instruções DEX | Pendente | dispatch/override | Não | Exige análise real |
+| Análise de registradores | Reverse | análise de fluxo e expansão | [DEX](https://mt.cc/guide/reverse/dex.html) | CFG/dataflow sobre dexlib2 | Pendente | corpus/verification | Não | Nunca será regex |
+| Java descompilado | Reverse | JADX e outros, apenas referência | [DEX](https://mt.cc/guide/reverse/dex.html) | avaliar JADX Android | Pendente | memória/licença | Não | Sem promessa de recompilar Java |
+| AXML leitura/edição | Reverse | binário ↔ texto preservando recursos | [AXML](https://mt.cc/guide/reverse/xml.html) | biblioteca madura/round-trip | Pendente | namespaces/resource map | Não | PackageManager só inspeciona manifest |
+| ARSC leitura/edição | Reverse | package/type/config/entry/value | [ARSC](https://mt.cc/guide/reverse/arsc.html) | parser maduro + rebuild | Pendente | corpus AAPT1/AAPT2 | Não | Não haverá parser improvisado |
+| Tradução de recursos | Reverse | modo de tradução em ARSC/XML | [ARSC](https://mt.cc/guide/reverse/arsc.html) | preservar placeholders/escapes | Pendente | `%1$s`, plurals | Não | Chaves de IA somente backend |
+| Assinatura APK | APK | assinatura e certificado | [Manual reverse](https://mt.cc/guide/reverse/signature.html) | apksig v1–v4 + Keystore | Pendente | verificação Android | Não | Certificado apenas leitura hoje |
+| Terminal | Ferramentas | terminal integrado | [Manual](https://mt.cc/guide/file/terminal.html) | terminal isolado/PTY | Pendente | escaping/TTY | Não | Não confundir com root backend |
+| Plugins | Extensão | APIs de plugin/editor/tradução/UI | [Manual oficial](https://mt.cc/guide/plugin-v3/getting-started.html) | API assinada e sandboxed | Pendente | permissões/abuso | Não | Segurança antes da compatibilidade |
+| Rede | Arquivos | Protocolos devem ser confirmados | Manual atual sem página primária localizada nesta pesquisa | pesquisar versões e bibliotecas | Pesquisa pendente | TLS/credenciais | Não | Nenhum TrustManager permissivo |

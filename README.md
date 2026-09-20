@@ -2,7 +2,7 @@
 
 Gerenciador de arquivos Android nativo em dois painéis, inspirado no fluxo de produtividade do MT Manager, com operações painel-a-painel, edição, ferramentas para APK/DEX, arquivos compactados e acesso progressivo por armazenamento normal, SAF, Shizuku e root autorizado.
 
-## Estado atual — 0.3.0
+## Estado atual — 0.3.1
 
 Implementado e integrado:
 
@@ -19,6 +19,8 @@ Implementado e integrado:
 - listagem de apps instalados e exportação de APK base + splits;
 - parser DEX para classes, métodos, campos e strings;
 - ícones por tipo de arquivo e interface dual-pane otimizada para telas Android;
+- bookmarks persistentes para caminhos diretos, SAF e localizações dentro de arquivos compactados;
+- inspeção e alteração de permissões Unix via root com validação de modo `chmod`;
 - testes unitários de segurança, shell, navegação, classificação e diff.
 
 Ainda não há paridade total com o MT Manager. Smali/rebuild DEX, AXML/ARSC editável, assinatura APK v1-v4, comparadores semânticos DEX/ARSC, 7z/tar completos, terminal/PTTY, plugins e protocolos de rede continuam listados em `docs/MT_PARITY_MATRIX.md` e não são anunciados como prontos.
@@ -26,11 +28,11 @@ Ainda não há paridade total com o MT Manager. Smali/rebuild DEX, AXML/ARSC edi
 ## Toolchain moderna
 
 - Android Gradle Plugin: 9.4.0
-- Gradle Wrapper: 9.6.1 (SHA-256 fixado)
+- Gradle: 9.6.1 fixado no GitHub Actions
 - CI: Temurin JDK 25 LTS
 - bytecode Java/Kotlin do app: JVM 17
 - compileSdk / targetSdk: 37
-- AndroidX Core KTX: 1.18.0
+- AndroidX Core KTX: 1.19.0
 - kotlinx.coroutines: 1.11.0
 - Shizuku API: 13.1.5
 
@@ -39,7 +41,7 @@ O JDK usado para **executar o Gradle** pode ser mais novo que o bytecode do app.
 ## Compilar
 
 ```bash
-./gradlew testDebugUnitTest assembleDebug
+gradle testDebugUnitTest assembleDebug
 ```
 
 APK debug:

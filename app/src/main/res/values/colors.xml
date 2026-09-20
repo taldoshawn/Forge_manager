@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="fm_top">#25272B</color>
+    <color name="fm_top_secondary">#B7BBC2</color>
+    <color name="fm_background">#F7F8FA</color>
+    <color name="fm_surface">#FFFDFD</color>
+    <color name="fm_text">#202226</color>
+    <color name="fm_secondary">#777D86</color>
+    <color name="fm_divider">#D4D8DD</color>
+    <color name="fm_selected">#E7F1FC</color>
+    <color name="fm_accent">#1976D2</color>
+    <color name="fm_folder">#E5A62E</color>
+    <color name="fm_archive">#8A66CC</color>
+    <color name="fm_apk">#49A66D</color>
+    <color name="fm_image">#E35E7A</color>
+    <color name="fm_video">#D85858</color>
+    <color name="fm_audio">#8B5BC7</color>
+    <color name="fm_code">#3977C6</color>
+    <color name="fm_text_file">#68717C</color>
+    <color name="fm_pdf">#D34B45</color>
+    <color name="fm_dex">#3B948B</color>
+    <color name="fm_xml">#C97828</color>
+    <color name="fm_database">#4A75A8</color>
+    <color name="fm_font">#555C66</color>
+    <color name="fm_sheet">#3E9A62</color>
+    <color name="fm_presentation">#D36F36</color>
+    <color name="fm_config">#66788A</color>
+    <color name="fm_certificate">#B88926</color>
+    <color name="fm_executable">#4C5966</color>
+</resources>
