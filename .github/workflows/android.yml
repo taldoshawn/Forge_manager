@@ -17,7 +17,7 @@ concurrency:
 jobs:
   debug:
     name: Test + Debug APK
-    runs-on: ubuntu-22.04
+    runs-on: macos-15
     timeout-minutes: 35
     steps:
       - name: Checkout
