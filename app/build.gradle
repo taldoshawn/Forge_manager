@@ -10,28 +10,30 @@ android {
         applicationId = 'com.forgemanager.app'
         minSdk = 26
         targetSdk = 37
-        versionCode = 6
-        versionName = '0.4.0'
+        versionCode = 7
+        versionName = '0.5.0'
         testInstrumentationRunner = 'android.test.InstrumentationTestRunner'
+        externalNativeBuild { cmake { cppFlags '' } }
     }
 
-    buildFeatures {
-        aidl = true
-        buildConfig = true
+    buildFeatures { aidl = true; buildConfig = true }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
     }
+    ndkVersion '28.2.13676358'
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    testOptions {
-        unitTests.returnDefaultValues = true
-    }
+    testOptions { unitTests.returnDefaultValues = true }
 
-    packaging {
-        resources.excludes += ['META-INF/AL2.0', 'META-INF/LGPL2.1']
-    }
+    packaging { resources.excludes += ['META-INF/AL2.0', 'META-INF/LGPL2.1'] }
 }
 
 dependencies {
@@ -39,6 +41,8 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
     implementation 'dev.rikka.shizuku:api:13.1.5'
     implementation 'dev.rikka.shizuku:provider:13.1.5'
-
+    implementation 'org.smali:baksmali:2.5.2'
+    implementation 'org.smali:smali:2.5.2'
+    implementation 'com.android.tools.build:apksig:9.4.0'
     testImplementation 'junit:junit:4.13.2'
 }
