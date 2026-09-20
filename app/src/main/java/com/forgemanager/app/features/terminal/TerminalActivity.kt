@@ -84,7 +84,7 @@ class TerminalActivity : Activity() {
         }
         scroll = ScrollView(this@TerminalActivity).apply {
             isFillViewport = true
-            addView(output, ScrollView.LayoutParams(-1, -2))
+            addView(output, android.widget.FrameLayout.LayoutParams(-1, -2))
         }
         addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
