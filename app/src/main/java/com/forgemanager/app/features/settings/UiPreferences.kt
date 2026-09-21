@@ -6,7 +6,8 @@ import android.graphics.Color
 /** Single source of truth for Forge Manager visual preferences. */
 object UiPreferences {
     private const val PREFS = "forge_ui_settings"
-    private const val KEY_AMOLED = "amoled"
+    private const val KEY_THEME = "theme_mode"
+    private const val KEY_AMOLED = "amoled" // legacy migration only
     private const val KEY_ACCENT = "accent"
     private const val KEY_COMPACT = "compact_rows"
     private const val KEY_LARGE_ICONS = "large_icons"
@@ -14,35 +15,97 @@ object UiPreferences {
     private const val KEY_ARCHIVE_INTERNAL = "archives_internal"
     private const val KEY_CONFIRM_DELETE = "confirm_delete"
 
+    const val THEME_WHITE = "white"
+    const val THEME_GRAY = "gray"
+    const val THEME_DARK = "dark"
+
     fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    // A balanced dark palette is the default. Pure AMOLED remains opt-in.
-    fun amoled(context: Context): Boolean = prefs(context).getBoolean(KEY_AMOLED, false)
+    /**
+     * Default is a clean white file-manager surface. Gray and a normal dark
+     * theme remain selectable. Pure AMOLED black is intentionally not used.
+     */
+    fun themeMode(context: Context): String {
+        val preferences = prefs(context)
+        val saved = preferences.getString(KEY_THEME, null)
+        if (saved in setOf(THEME_WHITE, THEME_GRAY, THEME_DARK)) return saved!!
+        // Preserve old users who explicitly enabled the former AMOLED switch,
+        // but migrate them to normal dark rather than #000000.
+        return if (preferences.getBoolean(KEY_AMOLED, false)) THEME_DARK else THEME_WHITE
+    }
+
+    fun isLight(context: Context): Boolean = themeMode(context) != THEME_DARK
     fun compactRows(context: Context): Boolean = prefs(context).getBoolean(KEY_COMPACT, false)
     fun largeIcons(context: Context): Boolean = prefs(context).getBoolean(KEY_LARGE_ICONS, true)
     fun showHiddenDefault(context: Context): Boolean = prefs(context).getBoolean(KEY_SHOW_HIDDEN, false)
     fun openArchivesInternally(context: Context): Boolean = prefs(context).getBoolean(KEY_ARCHIVE_INTERNAL, true)
     fun confirmDelete(context: Context): Boolean = prefs(context).getBoolean(KEY_CONFIRM_DELETE, true)
 
-    fun accentName(context: Context): String = prefs(context).getString(KEY_ACCENT, "blue") ?: "blue"
+    fun accentName(context: Context): String = prefs(context).getString(KEY_ACCENT, "azure") ?: "azure"
+
     fun accent(context: Context): Int = when (accentName(context)) {
-        "cyan" -> Color.rgb(0, 200, 235)
-        "purple" -> Color.rgb(151, 106, 255)
-        "green" -> Color.rgb(63, 201, 126)
-        "orange" -> Color.rgb(245, 151, 66)
-        "red" -> Color.rgb(244, 82, 94)
-        else -> Color.rgb(42, 143, 255)
+        "cyan" -> Color.rgb(0, 174, 214)
+        "violet" -> Color.rgb(126, 87, 194)
+        "green" -> Color.rgb(29, 160, 103)
+        "orange" -> Color.rgb(238, 123, 45)
+        "red" -> Color.rgb(224, 73, 83)
+        "pink" -> Color.rgb(214, 68, 139)
+        else -> Color.rgb(31, 126, 232)
     }
 
-    fun background(context: Context): Int = if (amoled(context)) Color.BLACK else Color.rgb(16, 17, 20)
-    fun surface(context: Context): Int = if (amoled(context)) Color.BLACK else Color.rgb(23, 24, 28)
-    fun elevatedSurface(context: Context): Int = if (amoled(context)) Color.rgb(8, 8, 8) else Color.rgb(29, 31, 36)
-    fun subtleSurface(context: Context): Int = if (amoled(context)) Color.rgb(13, 13, 13) else Color.rgb(34, 36, 42)
-    fun divider(context: Context): Int = if (amoled(context)) Color.rgb(34, 34, 34) else Color.rgb(48, 51, 59)
-    fun textPrimary(context: Context): Int = Color.rgb(241, 243, 247)
-    fun textSecondary(context: Context): Int = Color.rgb(154, 160, 171)
+    /** Secondary color used for gradients and secondary actions. */
+    fun accentAlt(context: Context): Int = when (accentName(context)) {
+        "cyan" -> Color.rgb(17, 109, 219)
+        "violet" -> Color.rgb(215, 75, 151)
+        "green" -> Color.rgb(0, 169, 184)
+        "orange" -> Color.rgb(220, 72, 83)
+        "red" -> Color.rgb(165, 73, 196)
+        "pink" -> Color.rgb(119, 77, 207)
+        else -> Color.rgb(0, 184, 202)
+    }
 
-    fun setAmoled(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_AMOLED, value).apply()
+    fun background(context: Context): Int = when (themeMode(context)) {
+        THEME_GRAY -> Color.rgb(229, 233, 239)
+        THEME_DARK -> Color.rgb(24, 26, 31)
+        else -> Color.rgb(248, 249, 251)
+    }
+
+    fun surface(context: Context): Int = when (themeMode(context)) {
+        THEME_GRAY -> Color.rgb(240, 242, 246)
+        THEME_DARK -> Color.rgb(31, 34, 40)
+        else -> Color.WHITE
+    }
+
+    fun elevatedSurface(context: Context): Int = when (themeMode(context)) {
+        THEME_GRAY -> Color.rgb(218, 223, 230)
+        THEME_DARK -> Color.rgb(39, 43, 51)
+        else -> Color.rgb(238, 242, 247)
+    }
+
+    fun subtleSurface(context: Context): Int = when (themeMode(context)) {
+        THEME_GRAY -> Color.rgb(207, 213, 222)
+        THEME_DARK -> Color.rgb(47, 51, 60)
+        else -> Color.rgb(230, 235, 242)
+    }
+
+    fun divider(context: Context): Int = when (themeMode(context)) {
+        THEME_GRAY -> Color.rgb(190, 197, 208)
+        THEME_DARK -> Color.rgb(62, 67, 78)
+        else -> Color.rgb(214, 220, 229)
+    }
+
+    fun textPrimary(context: Context): Int = if (isLight(context)) Color.rgb(25, 30, 39) else Color.rgb(242, 244, 248)
+    fun textSecondary(context: Context): Int = if (isLight(context)) Color.rgb(92, 101, 116) else Color.rgb(166, 173, 185)
+
+    fun setThemeMode(context: Context, value: String) {
+        require(value in setOf(THEME_WHITE, THEME_GRAY, THEME_DARK))
+        prefs(context).edit().putString(KEY_THEME, value).remove(KEY_AMOLED).apply()
+    }
+
+    // Kept so older call-sites and migrations remain source-compatible.
+    fun amoled(context: Context): Boolean = themeMode(context) == THEME_DARK
+    fun setAmoled(context: Context, value: Boolean) = setThemeMode(context, if (value) THEME_DARK else THEME_WHITE)
+
     fun setAccent(context: Context, value: String) = prefs(context).edit().putString(KEY_ACCENT, value).apply()
     fun setCompactRows(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_COMPACT, value).apply()
     fun setLargeIcons(context: Context, value: Boolean) = prefs(context).edit().putBoolean(KEY_LARGE_ICONS, value).apply()
