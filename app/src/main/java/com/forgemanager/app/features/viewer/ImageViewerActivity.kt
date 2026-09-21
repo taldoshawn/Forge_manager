@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.drawable.AnimatedImageDrawable
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -21,6 +20,7 @@ import androidx.core.content.FileProvider
 import com.forgemanager.app.ForgeApplication
 import com.forgemanager.app.core.file.FileLocation
 import com.forgemanager.app.core.file.fileDisplayName
+import com.forgemanager.app.core.file.putFileLocation
 import com.forgemanager.app.core.file.readFileLocation
 import com.forgemanager.app.core.ui.ForgeActivity
 import com.forgemanager.app.features.explorer.FileListAdapter
@@ -57,6 +57,11 @@ class ImageViewerActivity : ForgeActivity() {
         load()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::status.isInitialized && ::location.isInitialized) load()
+    }
+
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
@@ -79,9 +84,9 @@ class ImageViewerActivity : ForgeActivity() {
             setTextColor(UiPreferences.textPrimary(this@ImageViewerActivity))
         }
         bar.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
+        bar.addView(tool("EDIT", "Editar imagem") { openEditor() })
         bar.addView(tool("FIT", "Ajustar à tela") { zoomView?.fitToScreen() })
         bar.addView(tool("↻", "Girar 90 graus") { zoomView?.rotateClockwise() })
-        bar.addView(tool("ⓘ", "Informações") { showInfo() })
         bar.addView(tool("⋮", "Mais") { showMore() })
         addView(bar, LinearLayout.LayoutParams(-1, dp(54)))
         content = FrameLayout(this@ImageViewerActivity).apply {
@@ -92,17 +97,18 @@ class ImageViewerActivity : ForgeActivity() {
 
     private fun tool(label: String, description: String, action: () -> Unit) = Button(this).apply {
         text = label
-        textSize = if (label.length > 2) 9f else 15f
+        textSize = if (label.length > 2) 8.5f else 15f
         contentDescription = description
         setTextColor(UiPreferences.textPrimary(this@ImageViewerActivity))
         setBackgroundColor(android.graphics.Color.TRANSPARENT)
-        minWidth = dp(42)
-        minimumWidth = dp(42)
-        setPadding(dp(4), 0, dp(4), 0)
+        minWidth = dp(40)
+        minimumWidth = dp(40)
+        setPadding(dp(3), 0, dp(3), 0)
         setOnClickListener { action() }
     }
 
     private fun load() {
+        if (!::status.isInitialized) return
         status.text = "Abrindo $name…"
         scope.launch {
             runCatching {
@@ -113,9 +119,7 @@ class ImageViewerActivity : ForgeActivity() {
                     val ext = name.substringAfterLast('.', "").lowercase()
                     when {
                         ext == "svg" -> Loaded.Svg(readLimited(MAX_SVG_BYTES))
-                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && ext in ANIMATED_EXTENSIONS && fileSize <= MAX_ANIMATED_BYTES -> {
-                            decodeAnimatedOrStatic(ext)
-                        }
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && ext in ANIMATED_EXTENSIONS && fileSize <= MAX_ANIMATED_BYTES -> decodeAnimatedOrStatic(ext)
                         else -> Loaded.Static(decodeSampledBitmap())
                     }
                 }
@@ -158,11 +162,8 @@ class ImageViewerActivity : ForgeActivity() {
     private suspend fun decodeSampledBitmap(): Bitmap {
         val direct = (location as? FileLocation.Direct)?.path?.let(::File)?.takeIf { it.isFile && it.canRead() }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        if (direct != null) {
-            BitmapFactory.decodeFile(direct.path, bounds)
-        } else {
-            graph.resolver.backendFor(location).openInput(location).use { BitmapFactory.decodeStream(it, null, bounds) }
-        }
+        if (direct != null) BitmapFactory.decodeFile(direct.path, bounds)
+        else graph.resolver.backendFor(location).openInput(location).use { BitmapFactory.decodeStream(it, null, bounds) }
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Formato de imagem não suportado pelo Android deste aparelho" }
         imageWidth = bounds.outWidth
         imageHeight = bounds.outHeight
@@ -171,11 +172,9 @@ class ImageViewerActivity : ForgeActivity() {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
-        return (if (direct != null) {
-            BitmapFactory.decodeFile(direct.path, options)
-        } else {
-            graph.resolver.backendFor(location).openInput(location).use { BitmapFactory.decodeStream(it, null, options) }
-        }) ?: error("Não foi possível decodificar a imagem")
+        return (if (direct != null) BitmapFactory.decodeFile(direct.path, options)
+        else graph.resolver.backendFor(location).openInput(location).use { BitmapFactory.decodeStream(it, null, options) })
+            ?: error("Não foi possível decodificar a imagem")
     }
 
     private fun calculateSample(width: Int, height: Int, target: Int): Int {
@@ -234,6 +233,15 @@ class ImageViewerActivity : ForgeActivity() {
         status.text = "$name  •  SVG"
     }
 
+    private fun openEditor() {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        if (ext == "svg" || ext == "gif") {
+            showError("O editor raster atual trabalha com PNG, JPG, WEBP, BMP e formatos estáticos. SVG/GIF continuam disponíveis no visualizador.")
+            return
+        }
+        startActivity(Intent(this, ImageEditorActivity::class.java).putFileLocation(location, name))
+    }
+
     private fun showInfo() {
         val resolution = if (imageWidth > 0 && imageHeight > 0) "\nResolução: ${imageWidth} × ${imageHeight}" else ""
         AlertDialog.Builder(this)
@@ -245,12 +253,15 @@ class ImageViewerActivity : ForgeActivity() {
 
     private fun showMore() {
         AlertDialog.Builder(this).setTitle(name)
-            .setItems(arrayOf("Ajustar à tela", "Resetar zoom", "Girar 90°", "Compartilhar", "Abrir externamente")) { _, which ->
+            .setItems(arrayOf("Editar imagem", "Ajustar à tela", "Resetar zoom", "Girar 90°", "Informações", "Compartilhar", "Abrir externamente")) { _, which ->
                 when (which) {
-                    0, 1 -> zoomView?.resetZoom()
-                    2 -> zoomView?.rotateClockwise()
-                    3 -> share()
-                    4 -> openExternally()
+                    0 -> openEditor()
+                    1 -> zoomView?.fitToScreen()
+                    2 -> zoomView?.resetZoom()
+                    3 -> zoomView?.rotateClockwise()
+                    4 -> showInfo()
+                    5 -> share()
+                    6 -> openExternally()
                 }
             }.show()
     }
@@ -264,11 +275,9 @@ class ImageViewerActivity : ForgeActivity() {
                 .onSuccess { file ->
                     val uri = FileProvider.getUriForFile(this@ImageViewerActivity, "$packageName.files", file)
                     val mime = URLConnection.guessContentTypeFromName(name) ?: "image/*"
-                    val intent = if (send) {
-                        Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
-                    } else {
-                        Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
-                    }.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    val intent = if (send) Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
+                    else Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     runCatching { startActivity(Intent.createChooser(intent, if (send) "Compartilhar" else "Abrir com")) }
                         .onFailure { showError("Nenhum aplicativo compatível") }
                 }.onFailure { showError(it.message ?: "Falha ao preparar arquivo") }
@@ -288,11 +297,13 @@ class ImageViewerActivity : ForgeActivity() {
         return target
     }
 
-    private fun showError(message: String) = AlertDialog.Builder(this)
-        .setTitle("Visualizador de imagem")
-        .setMessage(message)
-        .setPositiveButton("OK", null)
-        .show()
+    private fun showError(message: String) = runCatching {
+        if (!isFinishing && !isDestroyed) AlertDialog.Builder(this)
+            .setTitle("Visualizador de imagem")
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show()
+    }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
