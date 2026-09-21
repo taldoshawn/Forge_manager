@@ -301,7 +301,11 @@ class MainActivity : Activity() {
     }
 
     private fun navigate(id: PaneId, destination: FileLocation) {
-        controller.navigate(id, destination)
+        val target = when (destination) {
+            is FileLocation.Direct -> FileLocation.Direct(PathSecurity.maybeBypassRestricted(destination.path))
+            else -> destination
+        }
+        controller.navigate(id, target)
         refresh(id)
     }
 
