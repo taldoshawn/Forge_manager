@@ -21,30 +21,45 @@ object SidebarIconAtlas {
     private const val COLUMNS = 5
     private const val TILE_PX = 36
     private const val SLOT_COUNT = 20
+    private const val ICON_DP = 36
 
     private val sheetCache = object : LruCache<String, Bitmap>(3 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
     }
-    private val iconCache = object : LruCache<String, Bitmap>(4 * 1024 * 1024) {
+    private val iconCache = object : LruCache<String, Bitmap>(6 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
     }
 
-    fun drawable(context: Context, slot: Int): Drawable? {
+    fun drawable(context: Context, requestedSlot: Int): Drawable? {
+        val slot = normalizeSlot(requestedSlot)
         if (slot !in 0 until SLOT_COUNT) return null
         val theme = if (UiPreferences.isLight(context)) "light" else "dark"
-        val key = "$theme:$slot"
+        val density = context.resources.displayMetrics.densityDpi
+        val key = "$theme:$slot:$density"
         val bitmap = synchronized(iconCache) { iconCache.get(key) } ?: run {
             val sheet = loadSheet(context, theme) ?: return null
             val left = (slot % COLUMNS) * TILE_PX
             val top = (slot / COLUMNS) * TILE_PX
             if (left + TILE_PX > sheet.width || top + TILE_PX > sheet.height) return null
-            Bitmap.createBitmap(sheet, left, top, TILE_PX, TILE_PX).also {
-                synchronized(iconCache) { iconCache.put(key, it) }
+            val tile = Bitmap.createBitmap(sheet, left, top, TILE_PX, TILE_PX)
+            val target = (ICON_DP * context.resources.displayMetrics.density + 0.5f).toInt().coerceAtLeast(TILE_PX)
+            val scaled = if (target == TILE_PX) tile else Bitmap.createScaledBitmap(tile, target, target, true).also {
+                if (it !== tile) tile.recycle()
             }
+            scaled.density = density
+            synchronized(iconCache) { iconCache.put(key, scaled) }
+            scaled
         }
-        return BitmapDrawable(context.resources, bitmap).apply {
-            setTargetDensity(context.resources.displayMetrics)
-        }
+        return BitmapDrawable(context.resources, bitmap)
+    }
+
+    /** Compatibility aliases for the first drawer revision. */
+    private fun normalizeSlot(slot: Int): Int = when (slot) {
+        19 -> 18 // internal/storage shortcut -> storage artwork
+        20 -> 5  // DB/hex -> resource/database-style artwork
+        22 -> 19 // settings
+        23 -> 19 // help uses the settings/tool artwork from the supplied pack
+        else -> slot
     }
 
     private fun loadSheet(context: Context, theme: String): Bitmap? {
