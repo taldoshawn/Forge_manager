@@ -3,6 +3,7 @@ package com.forgemanager.app.features.editor
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -13,6 +14,8 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.HorizontalScrollView
@@ -36,10 +39,20 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.RandomAccessFile
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
+/**
+ * MT-style text/code editor.
+ *
+ * Small files are fully editable with syntax highlighting and undo/redo snapshots.
+ * Large files never get placed wholesale into EditText: they are opened in a
+ * paged, read-only viewer so multi-megabyte TXT/log files do not exhaust the UI
+ * thread or heap while Android builds a gigantic Layout/Spannable.
+ */
 class TextEditorActivity : ForgeActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val graph by lazy { (application as ForgeApplication).graph }
@@ -47,6 +60,7 @@ class TextEditorActivity : ForgeActivity() {
 
     private lateinit var editor: LineNumberEditText
     private lateinit var title: TextView
+    private lateinit var cursorPosition: TextView
     private lateinit var info: TextView
     private lateinit var location: FileLocation
     private lateinit var displayName: String
@@ -57,25 +71,28 @@ class TextEditorActivity : ForgeActivity() {
     private var charset: Charset = Charsets.UTF_8
     private var bom = ByteArray(0)
     private var lineEnding = "\n"
-    private var original = ""
-    private var loading = false
-    private var readOnly = false
-    private var largeFileMode = false
-    private var heavyFeatures = true
-    private var wordWrap = false
     private var fileSize = 0L
+    private var loading = false
+    private var dirty = false
+    private var readOnly = false
+    private var pagedMode = false
+    private var heavyFeatures = true
+    private var historyEnabled = true
+    private var wordWrap = false
+    private var keepScreenOn = false
 
+    private var pageOffset = 0L
+    private var pageBytesLoaded = 0
+
+    private var historyCurrent = ""
     private val undo = ArrayDeque<String>()
     private val redo = ArrayDeque<String>()
-    private var previous = ""
-    private var lastChangeStart = 0
-    private var lastChangeBefore = 0
-    private var lastChangeCount = 0
     private var pendingHighlightStart = Int.MAX_VALUE
     private var pendingHighlightEnd = 0
 
+    private val historyTask = Runnable { commitHistorySnapshot() }
     private val highlightTask = Runnable {
-        if (!::editor.isInitialized || loading || !heavyFeatures) return@Runnable
+        if (!::editor.isInitialized || loading || !heavyFeatures || pagedMode) return@Runnable
         val start = editor.selectionStart.coerceAtLeast(0)
         val end = editor.selectionEnd.coerceAtLeast(0)
         val from = pendingHighlightStart.takeIf { it != Int.MAX_VALUE } ?: start
@@ -83,7 +100,9 @@ class TextEditorActivity : ForgeActivity() {
         pendingHighlightStart = Int.MAX_VALUE
         pendingHighlightEnd = 0
         SyntaxHighlighter.applyChanged(editor.text, displayName, from, to)
-        if (start <= editor.length() && end <= editor.length()) runCatching { editor.setSelection(start, end) }
+        if (start <= editor.length() && end <= editor.length()) {
+            runCatching { editor.setSelection(start, end) }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,7 +112,7 @@ class TextEditorActivity : ForgeActivity() {
             ?: location.displayPath.substringAfterLast('/').substringAfterLast("!/").ifBlank { "arquivo" }
         profile = EditorProfile.forFile(displayName)
         setContentView(buildUi())
-        load()
+        loadInitial()
     }
 
     override fun onDestroy() {
@@ -111,52 +130,68 @@ class TextEditorActivity : ForgeActivity() {
             setBackgroundColor(UiPreferences.background(this@TextEditorActivity))
         }
 
-        val top = LinearLayout(this).apply {
+        val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), 0, dp(2), 0)
-            setBackgroundColor(UiPreferences.surface(this@TextEditorActivity))
+            setBackgroundColor(Color.rgb(43, 43, 43))
         }
-        top.addView(topButton("←", "Voltar") { requestClose() })
+        toolbar.addView(toolbarButton("☰", "Menu") { showMainMenu(it) })
+        toolbar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        toolbar.addView(toolbarButton("◆", "Manter tela ligada") { toggleKeepScreenOn() })
+        toolbar.addView(toolbarButton("↶", "Desfazer") { performUndo() })
+        toolbar.addView(toolbarButton("↷", "Refazer") { performRedo() })
+        toolbar.addView(toolbarButton("▣", "Salvar") { save() })
+        toolbar.addView(toolbarButton("✎", "Editar") { focusEditor() })
+        toolbar.addView(toolbarButton("⋮", "Mais") { showOverflow(it) })
+        root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(54)))
+
+        val tab = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(8), 0)
+            setBackgroundColor(Color.rgb(31, 31, 31))
+        }
         title = TextView(this).apply {
             text = displayName
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-            textSize = 12.5f
-            setTextColor(UiPreferences.textPrimary(this@TextEditorActivity))
-            setPadding(dp(4), 0, dp(2), 0)
+            textSize = 11f
+            setTextColor(Color.rgb(215, 215, 215))
         }
-        top.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
-        top.addView(topButton("✓", "Salvar") { save() })
-        top.addView(topButton("↶", "Desfazer") { performUndo() })
-        top.addView(topButton("↷", "Refazer") { performRedo() })
-        top.addView(topButton("⌕", "Buscar e substituir") { showSearch() })
-        top.addView(topButton("⋮", "Mais") { showOverflow(it) })
-        root.addView(top, LinearLayout.LayoutParams(-1, dp(52)))
+        cursorPosition = TextView(this).apply {
+            text = "1:1"
+            textSize = 10.5f
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setTextColor(Color.rgb(190, 190, 190))
+        }
+        tab.addView(title, LinearLayout.LayoutParams(0, -1, 1f))
+        tab.addView(cursorPosition, LinearLayout.LayoutParams(dp(70), -1))
+        root.addView(tab, LinearLayout.LayoutParams(-1, dp(28)))
 
         profileActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), 0, dp(6), 0)
-            setBackgroundColor(UiPreferences.elevatedSurface(this@TextEditorActivity))
+            setPadding(dp(4), 0, dp(4), 0)
+            setBackgroundColor(Color.rgb(52, 52, 52))
         }
         val actionScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             addView(profileActions)
         }
-        root.addView(actionScroll, LinearLayout.LayoutParams(-1, dp(40)))
+        root.addView(actionScroll, LinearLayout.LayoutParams(-1, dp(38)))
         populateProfileActions()
 
         editor = LineNumberEditText(this).apply {
             applyPalette(
-                UiPreferences.background(this@TextEditorActivity),
+                UiPreferences.surface(this@TextEditorActivity),
                 UiPreferences.textPrimary(this@TextEditorActivity),
                 UiPreferences.textSecondary(this@TextEditorActivity),
                 UiPreferences.divider(this@TextEditorActivity)
             )
             setSelectAllOnFocus(false)
             setWordWrapEnabled(wordWrap)
-            onSelectionChangedListener = { _, _ -> updateInfo() }
+            onSelectionChangedListener = { _, _ -> updateCursorInfo() }
         }
         editor.addTextChangedListener(editorWatcher())
         root.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -164,7 +199,7 @@ class TextEditorActivity : ForgeActivity() {
         symbolBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), 0, dp(4), 0)
+            setPadding(dp(2), 0, dp(2), 0)
             setBackgroundColor(UiPreferences.elevatedSurface(this@TextEditorActivity))
         }
         val symbolScroll = HorizontalScrollView(this).apply {
@@ -175,76 +210,86 @@ class TextEditorActivity : ForgeActivity() {
         populateSymbolBar()
 
         info = TextView(this).apply {
-            textSize = 10f
+            textSize = 9.5f
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), 0, dp(8), 0)
             setTextColor(UiPreferences.textSecondary(this@TextEditorActivity))
             setBackgroundColor(UiPreferences.surface(this@TextEditorActivity))
         }
-        root.addView(info, LinearLayout.LayoutParams(-1, dp(26)))
+        root.addView(info, LinearLayout.LayoutParams(-1, dp(24)))
         return root
     }
 
-    private fun topButton(label: String, description: String, action: (View) -> Unit) = Button(this).apply {
+    private fun toolbarButton(label: String, description: String, action: (View) -> Unit) = Button(this).apply {
         text = label
         contentDescription = description
-        textSize = if (label.length == 1) 16f else 10f
-        minWidth = dp(40)
-        minimumWidth = dp(40)
-        setPadding(dp(3), 0, dp(3), 0)
-        setTextColor(UiPreferences.textPrimary(this@TextEditorActivity))
+        textSize = if (label.length == 1) 18f else 14f
+        minWidth = dp(43)
+        minimumWidth = dp(43)
+        minHeight = dp(48)
+        minimumHeight = dp(48)
+        setPadding(dp(2), 0, dp(2), 0)
+        setTextColor(Color.WHITE)
         setBackgroundColor(Color.TRANSPARENT)
         setOnClickListener(action)
     }
 
     private fun smallAction(label: String, action: () -> Unit) = Button(this).apply {
         text = label
-        textSize = 9.5f
-        minWidth = dp(58)
-        minimumWidth = dp(58)
-        setPadding(dp(8), 0, dp(8), 0)
-        setTextColor(UiPreferences.textPrimary(this@TextEditorActivity))
+        textSize = 8.8f
+        minWidth = dp(54)
+        minimumWidth = dp(54)
+        setPadding(dp(7), 0, dp(7), 0)
+        setTextColor(Color.WHITE)
         setBackgroundColor(Color.TRANSPARENT)
         setOnClickListener { action() }
     }
 
     private fun populateProfileActions() {
+        if (!::profileActions.isInitialized) return
         profileActions.removeAllViews()
         profileActions.addView(TextView(this).apply {
             text = profile.label.uppercase()
-            textSize = 9f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(UiPreferences.accent(this@TextEditorActivity))
+            textSize = 8.8f
+            setTextColor(Color.rgb(90, 190, 255))
             setPadding(dp(7), 0, dp(8), 0)
         })
+
+        if (pagedMode) {
+            profileActions.addView(smallAction("◀ BLOCO") { previousPage() })
+            profileActions.addView(smallAction("BLOCO ▶") { nextPage() })
+            profileActions.addView(TextView(this).apply {
+                text = pageLabel()
+                textSize = 8.5f
+                setTextColor(Color.LTGRAY)
+                setPadding(dp(8), 0, dp(8), 0)
+            })
+            return
+        }
+
         if (profile.canFormat) profileActions.addView(smallAction("FORMATAR") { formatDocument() })
         if (profile.canValidate) profileActions.addView(smallAction("VALIDAR") { validateDocument() })
-        if (profile.canOutline) profileActions.addView(smallAction(if (profile.language in setOf(EditorLanguage.XML, EditorLanguage.JSON)) "ÁRVORE" else "SÍMBOLOS") { showStructure() })
+        if (profile.canOutline) profileActions.addView(smallAction("SÍMBOLOS") { showStructure() })
         if (profile.canPreview) profileActions.addView(smallAction("PREVIEW") { preview() })
         if (profile.language in setOf(EditorLanguage.XML, EditorLanguage.JSON)) {
             profileActions.addView(smallAction("MINIFICAR") { minifyDocument() })
         }
-        if (profileActions.childCount == 1) {
-            profileActions.addView(TextView(this).apply {
-                text = "edição simples"
-                textSize = 10f
-                setTextColor(UiPreferences.textSecondary(this@TextEditorActivity))
-                setPadding(dp(4), 0, dp(8), 0)
-            })
-        }
     }
 
     private fun populateSymbolBar() {
+        if (!::symbolBar.isInitialized) return
         symbolBar.removeAllViews()
         for (symbol in profile.symbolBar) {
             symbolBar.addView(Button(this).apply {
                 text = symbol
-                textSize = 11f
-                minWidth = dp(42)
-                minimumWidth = dp(42)
-                setPadding(dp(7), 0, dp(7), 0)
+                textSize = 10.5f
+                minWidth = dp(40)
+                minimumWidth = dp(40)
+                setPadding(dp(6), 0, dp(6), 0)
                 setTextColor(UiPreferences.textPrimary(this@TextEditorActivity))
                 setBackgroundColor(Color.TRANSPARENT)
+                isEnabled = !readOnly
+                alpha = if (readOnly) 0.45f else 1f
                 setOnClickListener { insertSymbol(symbol) }
             })
         }
@@ -254,114 +299,145 @@ class TextEditorActivity : ForgeActivity() {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
 
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-            lastChangeStart = start
-            lastChangeBefore = before
-            lastChangeCount = count
             pendingHighlightStart = minOf(pendingHighlightStart, start)
             pendingHighlightEnd = maxOf(pendingHighlightEnd, start + count)
         }
 
         override fun afterTextChanged(s: Editable?) {
-            if (s == null || loading) return
-            if (!readOnly) {
-                val now = s.toString()
-                if (previous != now) {
-                    if (!largeFileMode && previous.length <= HISTORY_TEXT_LIMIT) {
-                        undo.addLast(previous)
-                        while (undo.size > MAX_HISTORY) undo.removeFirst()
-                    }
-                    redo.clear()
-                    previous = now
-                }
-                applyTypingAssistance()
-                previous = editor.text.toString()
-            }
-            updateTitle()
-            updateInfo()
+            if (s == null || loading || readOnly) return
+            dirty = true
+            scheduleHistorySnapshot()
             scheduleHighlight()
+            updateTitle()
+            updateCursorInfo()
         }
     }
 
-    private fun applyTypingAssistance() {
-        if (loading || readOnly || lastChangeBefore != 0 || lastChangeCount != 1) return
-        val text = editor.text
-        val pos = lastChangeStart
-        if (pos !in 0 until text.length) return
-        val typed = text[pos]
-        if (typed == '\n') {
-            val before = text.subSequence(0, pos).toString()
-            val previousLine = before.substringAfterLast('\n')
-            val baseIndent = previousLine.takeWhile { it == ' ' || it == '\t' }
-            val needsExtra = profile.indentationAfterColon && previousLine.trimEnd().endsWith(':') ||
-                profile.language in BRACED_LANGUAGES && previousLine.trimEnd().endsWith('{')
-            val indent = baseIndent + if (needsExtra) "    " else ""
-            if (indent.isNotEmpty()) {
-                loading = true
-                text.insert(pos + 1, indent)
-                editor.setSelection((pos + 1 + indent.length).coerceAtMost(text.length))
-                loading = false
-            }
-            return
-        }
-        val closing = when (typed) {
-            '(' -> ')'
-            '[' -> ']'
-            '{' -> '}'
-            '"' -> '"'
-            '\'' -> '\''
-            else -> null
-        } ?: return
-        if (profile.language in setOf(EditorLanguage.PLAIN, EditorLanguage.MARKDOWN) && typed == '{') return
-        val cursor = editor.selectionStart
-        if (cursor < 0 || cursor > text.length) return
-        if (cursor < text.length && text[cursor] == closing) return
-        loading = true
-        text.insert(cursor, closing.toString())
-        editor.setSelection(cursor)
-        loading = false
+    private fun scheduleHistorySnapshot() {
+        if (!historyEnabled || loading) return
+        handler.removeCallbacks(historyTask)
+        handler.postDelayed(historyTask, HISTORY_DEBOUNCE_MS)
     }
 
-    private fun load() {
+    private fun commitHistorySnapshot() {
+        if (!historyEnabled || loading || !::editor.isInitialized) return
+        val now = editor.text.toString()
+        if (now == historyCurrent) return
+        undo.addLast(historyCurrent)
+        while (undo.size > MAX_HISTORY) undo.removeFirst()
+        historyCurrent = now
+        redo.clear()
+    }
+
+    private fun scheduleHighlight() {
+        if (!heavyFeatures || pagedMode) return
+        handler.removeCallbacks(highlightTask)
+        handler.postDelayed(highlightTask, HIGHLIGHT_DEBOUNCE_MS)
+    }
+
+    private fun loadInitial() {
         title.text = "Abrindo $displayName…"
         scope.launch {
-            runCatching {
+            val result = runCatching {
                 withContext(Dispatchers.IO) {
                     val backend = graph.resolver.backendFor(location)
-                    val size = backend.stat(location).size.coerceAtLeast(0)
-                    fileSize = size
-                    readOnly = size > MAX_LARGE_EDIT_BYTES
-                    largeFileMode = size > MAX_NORMAL_EDIT_BYTES
-                    heavyFeatures = !largeFileMode
-                    val limit = when {
-                        readOnly -> PREVIEW_BYTES
-                        else -> MAX_LARGE_EDIT_BYTES.toInt()
+                    fileSize = backend.stat(location).size.coerceAtLeast(0)
+                    pagedMode = fileSize > MAX_EDITABLE_BYTES
+                    readOnly = pagedMode
+                    heavyFeatures = !pagedMode && fileSize <= HIGHLIGHT_BYTES
+                    historyEnabled = !pagedMode && fileSize <= HISTORY_BYTES
+
+                    if (pagedMode) {
+                        pageOffset = 0L
+                        val bytes = readPageBytes(0L)
+                        pageBytesLoaded = bytes.size
+                        decodeChunk(bytes, firstPage = true)
+                    } else {
+                        val bytes = backend.openInput(location).use { input ->
+                            readAtMost(input, MAX_EDITABLE_BYTES.toInt() + 1)
+                        }
+                        if (bytes.size > MAX_EDITABLE_BYTES) error("Arquivo excedeu o limite de edição segura")
+                        detectEncoding(bytes)
                     }
-                    val data = backend.openInput(location).use { input -> readAtMost(input, limit) }
-                    detectEncoding(data)
                 }
-            }.onSuccess { decoded ->
-                loading = true
-                original = decoded
-                previous = decoded
-                editor.setText(decoded)
-                editor.setSelection(0)
-                if (readOnly) {
-                    editor.keyListener = null
-                    editor.setTextIsSelectable(true)
-                }
-                loading = false
-                if (heavyFeatures) SyntaxHighlighter.apply(editor.text, displayName)
-                updateTitle()
-                updateInfo()
-                if (largeFileMode) {
-                    val message = if (readOnly) "Arquivo muito grande: prévia parcial somente leitura" else "Large File Mode: highlight e análise pesada desativados"
-                    Toast.makeText(this@TextEditorActivity, message, Toast.LENGTH_LONG).show()
-                }
-            }.onFailure { showError(it.message ?: "Falha ao abrir") }
+            }
+            result.onSuccess { text -> applyLoadedText(text, initial = true) }
+                .onFailure { showError(it.message ?: "Falha ao abrir arquivo") }
         }
     }
 
-    private fun readAtMost(input: java.io.InputStream, limit: Int): ByteArray {
+    private fun applyLoadedText(text: String, initial: Boolean) {
+        loading = true
+        editor.setText(text)
+        editor.setSelection(0)
+        if (readOnly) {
+            editor.keyListener = null
+            editor.setTextIsSelectable(true)
+        }
+        loading = false
+
+        dirty = false
+        undo.clear()
+        redo.clear()
+        historyCurrent = if (historyEnabled) text else ""
+        if (heavyFeatures) SyntaxHighlighter.apply(editor.text, displayName)
+        populateProfileActions()
+        populateSymbolBar()
+        updateTitle()
+        updateCursorInfo()
+
+        if (initial && pagedMode) {
+            Toast.makeText(
+                this,
+                "Arquivo grande: aberto em blocos para evitar travamentos. Edição total foi desativada para proteger memória.",
+                Toast.LENGTH_LONG
+            ).show()
+        } else if (initial && !heavyFeatures && !pagedMode) {
+            Toast.makeText(this, "Modo leve: highlight e análise pesada foram desativados para este arquivo.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private suspend fun readPageBytes(offset: Long): ByteArray {
+        val target = offset.coerceIn(0L, fileSize.coerceAtLeast(0L))
+        val direct = (location as? FileLocation.Direct)?.path?.let(::File)
+        if (direct != null && direct.isFile && direct.canRead()) {
+            RandomAccessFile(direct, "r").use { raf ->
+                raf.seek(target)
+                val max = minOf(PAGE_BYTES.toLong(), (fileSize - target).coerceAtLeast(0L)).toInt()
+                val buffer = ByteArray(max)
+                var total = 0
+                while (total < max) {
+                    val read = raf.read(buffer, total, max - total)
+                    if (read < 0) break
+                    total += read
+                }
+                return if (total == buffer.size) buffer else buffer.copyOf(total)
+            }
+        }
+
+        val backend = graph.resolver.backendFor(location)
+        return backend.openInput(location).use { input ->
+            skipFully(input, target)
+            readAtMost(input, PAGE_BYTES)
+        }
+    }
+
+    private fun skipFully(input: InputStream, bytes: Long) {
+        var remaining = bytes
+        val scratch = ByteArray(32 * 1024)
+        while (remaining > 0) {
+            val skipped = input.skip(remaining)
+            if (skipped > 0) {
+                remaining -= skipped
+                continue
+            }
+            val read = input.read(scratch, 0, minOf(scratch.size.toLong(), remaining).toInt())
+            if (read < 0) break
+            remaining -= read
+        }
+    }
+
+    private fun readAtMost(input: InputStream, limit: Int): ByteArray {
         val output = ByteArrayOutputStream(minOf(limit, 256 * 1024))
         val buffer = ByteArray(64 * 1024)
         var remaining = limit
@@ -402,21 +478,76 @@ class TextEditorActivity : ForgeActivity() {
             '\r' in decoded -> "\r"
             else -> "\n"
         }
-        return decoded.replace("\r\n", "\n").replace('\r', '\n')
+        return normalizeNewlines(decoded)
+    }
+
+    private fun decodeChunk(data: ByteArray, firstPage: Boolean): String {
+        if (firstPage) return detectEncoding(data)
+        return normalizeNewlines(data.toString(charset))
+    }
+
+    private fun normalizeNewlines(value: String): String = value.replace("\r\n", "\n").replace('\r', '\n')
+
+    private fun nextPage() {
+        if (!pagedMode || pageBytesLoaded <= 0) return
+        val next = pageOffset + pageBytesLoaded
+        if (next >= fileSize) {
+            toast("Último bloco")
+            return
+        }
+        loadPage(next)
+    }
+
+    private fun previousPage() {
+        if (!pagedMode) return
+        if (pageOffset <= 0L) {
+            toast("Primeiro bloco")
+            return
+        }
+        loadPage((pageOffset - PAGE_BYTES).coerceAtLeast(0L))
+    }
+
+    private fun loadPage(offset: Long) {
+        title.text = "Carregando bloco…"
+        scope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val target = offset.coerceIn(0L, fileSize.coerceAtLeast(0L))
+                    val bytes = readPageBytes(target)
+                    target to bytes
+                }
+            }
+            result.onSuccess { (target, bytes) ->
+                pageOffset = target
+                pageBytesLoaded = bytes.size
+                applyLoadedText(decodeChunk(bytes, firstPage = target == 0L), initial = false)
+            }.onFailure { showError(it.message ?: "Falha ao carregar bloco") }
+        }
+    }
+
+    private fun pageLabel(): String {
+        if (!pagedMode || fileSize <= 0L) return ""
+        val start = pageOffset + 1
+        val end = (pageOffset + pageBytesLoaded).coerceAtMost(fileSize)
+        return "${formatBytes(start)}–${formatBytes(end)} / ${formatBytes(fileSize)}"
     }
 
     private fun save(after: (() -> Unit)? = null) {
-        if (readOnly) { showError("A prévia parcial não pode ser sobrescrita"); return }
+        if (pagedMode || readOnly) {
+            showError("Arquivos grandes são abertos em blocos somente leitura. Isso evita travamentos e impede sobrescrever o arquivo com apenas um trecho.")
+            return
+        }
+        handler.removeCallbacks(historyTask)
         val content = editor.text.toString()
         title.text = "Salvando $displayName…"
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { writeLocation(location, content) } }
                 .onSuccess {
-                    original = content
-                    previous = content
-                    fileSize = encodedText(content).size.toLong()
+                    dirty = false
+                    historyCurrent = if (historyEnabled) content else ""
+                    fileSize = bom.size + encodedText(content).size.toLong()
                     updateTitle()
-                    updateInfo()
+                    updateCursorInfo()
                     toast("Salvo")
                     after?.invoke()
                 }.onFailure { showError(it.message ?: "Falha ao salvar") }
@@ -474,7 +605,10 @@ class TextEditorActivity : ForgeActivity() {
     }
 
     private fun saveAs() {
-        if (readOnly) { showError("A prévia parcial não pode ser salva como edição"); return }
+        if (readOnly || pagedMode) {
+            showError("Salvar como fica desativado no modo de arquivo grande por blocos.")
+            return
+        }
         val input = EditText(this).apply {
             setText(displayName)
             setSelection(text.length)
@@ -483,7 +617,10 @@ class TextEditorActivity : ForgeActivity() {
         AlertDialog.Builder(this).setTitle("Salvar como").setView(input)
             .setPositiveButton("Salvar") { _, _ ->
                 val newName = input.text.toString().trim()
-                if (newName.isBlank() || '/' in newName || '\\' in newName) { showError("Nome inválido"); return@setPositiveButton }
+                if (newName.isBlank() || '/' in newName || '\\' in newName) {
+                    showError("Nome inválido")
+                    return@setPositiveButton
+                }
                 scope.launch {
                     runCatching {
                         withContext(Dispatchers.IO) {
@@ -497,15 +634,16 @@ class TextEditorActivity : ForgeActivity() {
                         location = newLocation
                         displayName = newName
                         profile = EditorProfile.forFile(displayName)
-                        original = editor.text.toString()
-                        previous = original
+                        dirty = false
                         populateProfileActions()
                         populateSymbolBar()
                         updateTitle()
                         toast("Salvo como $newName")
                     }.onFailure { showError(it.message ?: "Falha em Salvar como") }
                 }
-            }.setNegativeButton("Cancelar", null).show()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
     }
 
     private fun formatDocument() {
@@ -513,7 +651,7 @@ class TextEditorActivity : ForgeActivity() {
         val source = editor.text.toString()
         scope.launch {
             val result = withContext(Dispatchers.Default) { EditorTools.format(profile, source) }
-            result.onSuccess { formatted -> replaceWholeDocument(formatted, "Documento formatado") }
+            result.onSuccess { replaceWholeDocument(it, "Documento formatado") }
                 .onFailure { showError(it.message ?: "Falha ao formatar") }
         }
     }
@@ -523,7 +661,7 @@ class TextEditorActivity : ForgeActivity() {
         val source = editor.text.toString()
         scope.launch {
             val result = withContext(Dispatchers.Default) { EditorTools.minify(profile, source) }
-            result.onSuccess { minified -> replaceWholeDocument(minified, "Documento minificado") }
+            result.onSuccess { replaceWholeDocument(it, "Documento minificado") }
                 .onFailure { showError(it.message ?: "Falha ao minificar") }
         }
     }
@@ -552,72 +690,91 @@ class TextEditorActivity : ForgeActivity() {
         scope.launch {
             val symbols = withContext(Dispatchers.Default) { EditorTools.symbols(profile, source) }
             if (symbols.isNotEmpty() && profile.language !in setOf(EditorLanguage.XML, EditorLanguage.JSON)) {
-                AlertDialog.Builder(this@TextEditorActivity).setTitle("Símbolos — ${profile.label}")
+                AlertDialog.Builder(this@TextEditorActivity)
+                    .setTitle("Símbolos — ${profile.label}")
                     .setItems(symbols.take(1_000).map { "${it.line}  ${it.kind}  ${it.name}" }.toTypedArray()) { _, which ->
                         symbols.getOrNull(which)?.let { goToLine(it.line) }
-                    }.setNegativeButton("Fechar", null).show()
+                    }
+                    .setNegativeButton("Fechar", null)
+                    .show()
             } else {
                 val result = withContext(Dispatchers.Default) { EditorTools.structure(profile, source) }
-                result.onSuccess { tree ->
-                    AlertDialog.Builder(this@TextEditorActivity).setTitle("Estrutura — ${profile.label}")
-                        .setMessage(tree).setPositiveButton("Fechar", null).show()
+                result.onSuccess {
+                    AlertDialog.Builder(this@TextEditorActivity)
+                        .setTitle("Estrutura — ${profile.label}")
+                        .setMessage(it)
+                        .setPositiveButton("Fechar", null)
+                        .show()
                 }.onFailure { showError(it.message ?: "Falha ao gerar estrutura") }
             }
         }
     }
 
-    private fun replaceWholeDocument(value: String, message: String) {
-        if (value == editor.text.toString()) { toast("Nenhuma alteração necessária"); return }
-        if (!largeFileMode && editor.length() <= HISTORY_TEXT_LIMIT) {
-            undo.addLast(editor.text.toString())
-            while (undo.size > MAX_HISTORY) undo.removeFirst()
-        }
-        loading = true
-        editor.setText(value)
-        editor.setSelection(value.length.coerceAtMost(editor.length()))
-        previous = value
-        loading = false
-        redo.clear()
-        if (heavyFeatures) SyntaxHighlighter.apply(editor.text, displayName)
-        updateTitle()
-        updateInfo()
-        toast(message)
-    }
-
     private fun allowHeavyAction(action: String): Boolean {
-        if (readOnly) { showError("Não é possível $action em prévia parcial"); return false }
-        if (!heavyFeatures) { showError("Large File Mode: $action foi desativado para proteger memória e desempenho"); return false }
+        if (pagedMode || readOnly) {
+            showError("Não é possível $action no modo de arquivo grande por blocos.")
+            return false
+        }
+        if (!heavyFeatures) {
+            showError("Modo leve: $action foi desativado para proteger memória e desempenho.")
+            return false
+        }
         return true
     }
 
     private fun preview() {
-        if (profile.language !in setOf(EditorLanguage.HTML, EditorLanguage.MARKDOWN)) return
-        val open = {
-            startActivity(Intent(this, HtmlPreviewActivity::class.java).putFileLocation(location, displayName))
+        if (profile.language !in setOf(EditorLanguage.HTML, EditorLanguage.MARKDOWN) || pagedMode) return
+        val open = { startActivity(Intent(this, HtmlPreviewActivity::class.java).putFileLocation(location, displayName)) }
+        if (dirty) save(open) else open()
+    }
+
+    private fun replaceWholeDocument(value: String, message: String) {
+        if (readOnly || pagedMode) return
+        if (value == editor.text.toString()) {
+            toast("Nenhuma alteração necessária")
+            return
         }
-        if (isDirty()) save(open) else open()
+        loading = true
+        editor.setText(value)
+        editor.setSelection(value.length.coerceAtMost(editor.length()))
+        loading = false
+        dirty = true
+        if (historyEnabled) {
+            undo.addLast(historyCurrent)
+            while (undo.size > MAX_HISTORY) undo.removeFirst()
+            historyCurrent = value
+            redo.clear()
+        }
+        if (heavyFeatures) SyntaxHighlighter.apply(editor.text, displayName)
+        updateTitle()
+        updateCursorInfo()
+        toast(message)
     }
 
     private fun showSearch() {
-        val dialog = AlertDialog.Builder(this).setTitle("Buscar e substituir").create()
+        val dialog = AlertDialog.Builder(this).setTitle(if (pagedMode) "Buscar no bloco" else "Buscar e substituir").create()
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(2), dp(18), dp(10))
         }
         val find = EditText(this).apply { hint = "Buscar"; setSingleLine() }
-        val replacement = EditText(this).apply { hint = "Substituir por"; setSingleLine() }
+        val replacement = EditText(this).apply { hint = "Substituir por"; setSingleLine(); isEnabled = !readOnly }
         box.addView(find)
         box.addView(replacement)
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        fun add(label: String, weight: Float = 1f, action: () -> Unit) {
-            actions.addView(Button(this@TextEditorActivity).apply { text = label; setOnClickListener { action() } }, LinearLayout.LayoutParams(0, dp(46), weight))
+        fun add(label: String, enabled: Boolean = true, action: () -> Unit) {
+            actions.addView(Button(this@TextEditorActivity).apply {
+                text = label
+                isEnabled = enabled
+                setOnClickListener { action() }
+            }, LinearLayout.LayoutParams(0, dp(44), 1f))
         }
-        add("ANTERIOR") { findPrevious(find.text.toString()) }
-        add("PRÓXIMO") { findNext(find.text.toString()) }
-        add("TROCAR") { replaceCurrent(find.text.toString(), replacement.text.toString()) }
-        add("TODOS") { replaceAll(find.text.toString(), replacement.text.toString()) }
+        add("ANT.") { findPrevious(find.text.toString()) }
+        add("PRÓX.") { findNext(find.text.toString()) }
+        add("TROCAR", !readOnly) { replaceCurrent(find.text.toString(), replacement.text.toString()) }
+        add("TODOS", !readOnly) { replaceAll(find.text.toString(), replacement.text.toString()) }
         box.addView(actions)
-        box.addView(Button(this).apply { text = "FECHAR"; setOnClickListener { dialog.dismiss() } }, LinearLayout.LayoutParams(-1, dp(44)))
+        box.addView(Button(this).apply { text = "FECHAR"; setOnClickListener { dialog.dismiss() } }, LinearLayout.LayoutParams(-1, dp(42)))
         dialog.setView(box)
         dialog.setOnShowListener { find.requestFocus() }
         dialog.show()
@@ -634,12 +791,14 @@ class TextEditorActivity : ForgeActivity() {
             text.indexOf(query, from, ignoreCase = true).let { if (it < 0) text.indexOf(query, 0, true) else it }
         } else {
             val from = (editor.selectionStart - 1).coerceAtMost(text.lastIndex)
-            text.lastIndexOf(query, from, ignoreCase = true).let { if (it < 0) text.lastIndexOf(query, text.lastIndex, true) else it }
+            text.lastIndexOf(query, from, ignoreCase = true).let {
+                if (it < 0) text.lastIndexOf(query, text.lastIndex, true) else it
+            }
         }
         if (index >= 0) {
             editor.requestFocus()
             editor.setSelection(index, (index + query.length).coerceAtMost(editor.length()))
-        } else toast("Não encontrado")
+        } else toast("Não encontrado${if (pagedMode) " neste bloco" else ""}")
     }
 
     private fun replaceCurrent(query: String, replacement: String) {
@@ -649,9 +808,7 @@ class TextEditorActivity : ForgeActivity() {
         if (start >= 0 && end > start && editor.text.subSequence(start, end).toString().equals(query, true)) {
             editor.text.replace(start, end, replacement)
             editor.setSelection((start + replacement.length).coerceAtMost(editor.length()))
-        } else {
-            findNext(query)
-        }
+        } else findNext(query)
     }
 
     private fun replaceAll(pattern: String, replacement: String) {
@@ -665,12 +822,19 @@ class TextEditorActivity : ForgeActivity() {
     }
 
     private fun performUndo() {
+        if (!historyEnabled || readOnly) {
+            if (!readOnly) toast("Undo desativado neste arquivo para economizar memória")
+            return
+        }
+        handler.removeCallbacks(historyTask)
+        commitHistorySnapshot()
         val value = undo.removeLastOrNull() ?: return
         redo.addLast(editor.text.toString())
         setEditorSnapshot(value)
     }
 
     private fun performRedo() {
+        if (!historyEnabled || readOnly) return
         val value = redo.removeLastOrNull() ?: return
         undo.addLast(editor.text.toString())
         setEditorSnapshot(value)
@@ -680,53 +844,74 @@ class TextEditorActivity : ForgeActivity() {
         loading = true
         editor.setText(value)
         editor.setSelection(value.length.coerceAtMost(editor.length()))
-        previous = value
         loading = false
+        historyCurrent = value
+        dirty = true
         if (heavyFeatures) SyntaxHighlighter.apply(editor.text, displayName)
         updateTitle()
-        updateInfo()
+        updateCursorInfo()
+    }
+
+    private fun showMainMenu(anchor: View) {
+        PopupMenu(this, anchor).apply {
+            menu.add("Buscar")
+            if (!readOnly) menu.add("Salvar")
+            if (!readOnly) menu.add("Salvar como")
+            menu.add("Ir para linha")
+            if (pagedMode) {
+                menu.add("Bloco anterior")
+                menu.add("Próximo bloco")
+            } else {
+                if (profile.canFormat) menu.add("Formatar")
+                if (profile.canValidate) menu.add("Validar")
+                if (profile.canOutline) menu.add("Símbolos")
+                if (profile.canPreview) menu.add("Preview")
+            }
+            menu.add("Fechar")
+            setOnMenuItemClickListener { item ->
+                when (item.title.toString()) {
+                    "Buscar" -> showSearch()
+                    "Salvar" -> save()
+                    "Salvar como" -> saveAs()
+                    "Ir para linha" -> promptGoToLine()
+                    "Bloco anterior" -> previousPage()
+                    "Próximo bloco" -> nextPage()
+                    "Formatar" -> formatDocument()
+                    "Validar" -> validateDocument()
+                    "Símbolos" -> showStructure()
+                    "Preview" -> preview()
+                    "Fechar" -> requestClose()
+                }
+                true
+            }
+            show()
+        }
     }
 
     private fun showOverflow(anchor: View) {
         PopupMenu(this, anchor).apply {
-            menu.add("Salvar como")
-            menu.add("Ir para linha")
+            menu.add("Buscar e substituir")
             menu.add(if (wordWrap) "Desativar quebra de linha" else "Ativar quebra de linha")
             menu.add("Aumentar fonte")
             menu.add("Diminuir fonte")
-            menu.add("Encoding")
-            menu.add("Final de linha")
-            menu.add("Indentar seleção")
-            menu.add("Diminuir indentação")
-            menu.add("Duplicar linha")
-            menu.add("Excluir linha")
-            menu.add("Mover linha para cima")
-            menu.add("Mover linha para baixo")
-            if (profile.commentPrefix != null) {
-                menu.add("Comentar")
-                menu.add("Descomentar")
-            }
+            if (!readOnly) menu.add("Encoding")
+            if (!readOnly) menu.add("Final de linha")
             menu.add("Copiar")
-            menu.add("Recortar")
-            menu.add("Colar")
+            if (!readOnly) menu.add("Recortar")
+            if (!readOnly) menu.add("Colar")
             menu.add("Selecionar tudo")
             setOnMenuItemClickListener { item ->
                 when (item.title.toString()) {
-                    "Salvar como" -> saveAs()
-                    "Ir para linha" -> promptGoToLine()
-                    "Ativar quebra de linha", "Desativar quebra de linha" -> { wordWrap = !wordWrap; editor.setWordWrapEnabled(wordWrap) }
-                    "Aumentar fonte" -> editor.textSize = (editor.textSize / resources.displayMetrics.scaledDensity + 1f).coerceAtMost(28f)
-                    "Diminuir fonte" -> editor.textSize = (editor.textSize / resources.displayMetrics.scaledDensity - 1f).coerceAtLeast(9f)
+                    "Buscar e substituir" -> showSearch()
+                    "Ativar quebra de linha", "Desativar quebra de linha" -> {
+                        wordWrap = !wordWrap
+                        editor.setWordWrapEnabled(wordWrap)
+                        updateCursorInfo()
+                    }
+                    "Aumentar fonte" -> editor.setEditorZoomSp(editor.editorZoomSp() + 1f)
+                    "Diminuir fonte" -> editor.setEditorZoomSp(editor.editorZoomSp() - 1f)
                     "Encoding" -> chooseEncoding()
                     "Final de linha" -> chooseLineEnding()
-                    "Indentar seleção" -> indentSelection(false)
-                    "Diminuir indentação" -> indentSelection(true)
-                    "Duplicar linha" -> duplicateLine()
-                    "Excluir linha" -> deleteLine()
-                    "Mover linha para cima" -> moveLine(-1)
-                    "Mover linha para baixo" -> moveLine(1)
-                    "Comentar" -> commentSelection(false)
-                    "Descomentar" -> commentSelection(true)
                     "Copiar" -> copySelection(cut = false)
                     "Recortar" -> copySelection(cut = true)
                     "Colar" -> pasteClipboard()
@@ -739,14 +924,30 @@ class TextEditorActivity : ForgeActivity() {
     }
 
     private fun promptGoToLine() {
-        val input = EditText(this).apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER; hint = "Linha"; setSingleLine() }
-        AlertDialog.Builder(this).setTitle("Ir para linha").setView(input)
+        val input = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            hint = if (pagedMode) "Linha dentro do bloco" else "Linha"
+            setSingleLine()
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Ir para linha")
+            .setView(input)
             .setPositiveButton("Ir") { _, _ -> input.text.toString().toIntOrNull()?.let(::goToLine) }
-            .setNegativeButton("Cancelar", null).show()
+            .setNegativeButton("Cancelar", null)
+            .show()
     }
 
     private fun goToLine(line: Int) {
         if (line <= 0) return
+        val layout = editor.layout
+        if (layout != null) {
+            val index = (line - 1).coerceIn(0, (layout.lineCount - 1).coerceAtLeast(0))
+            val offset = layout.getLineStart(index).coerceIn(0, editor.length())
+            editor.requestFocus()
+            editor.setSelection(offset)
+            editor.bringPointIntoView(offset)
+            return
+        }
         var current = 1
         var index = 0
         val text = editor.text
@@ -761,21 +962,31 @@ class TextEditorActivity : ForgeActivity() {
     private fun chooseEncoding() {
         val names = arrayOf("UTF-8", "UTF-16LE", "UTF-16BE")
         AlertDialog.Builder(this).setTitle("Encoding ao salvar").setItems(names) { _, which ->
-            charset = when (which) { 1 -> Charsets.UTF_16LE; 2 -> Charsets.UTF_16BE; else -> Charsets.UTF_8 }
+            charset = when (which) {
+                1 -> Charsets.UTF_16LE
+                2 -> Charsets.UTF_16BE
+                else -> Charsets.UTF_8
+            }
             bom = when (which) {
                 1 -> byteArrayOf(0xFF.toByte(), 0xFE.toByte())
                 2 -> byteArrayOf(0xFE.toByte(), 0xFF.toByte())
                 else -> if (bom.contentEquals(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))) bom else ByteArray(0)
             }
-            updateInfo()
+            dirty = true
+            updateCursorInfo()
         }.show()
     }
 
     private fun chooseLineEnding() {
         val values = arrayOf("LF (Unix/Android)", "CRLF (Windows)", "CR (clássico)")
         AlertDialog.Builder(this).setTitle("Final de linha").setItems(values) { _, which ->
-            lineEnding = when (which) { 1 -> "\r\n"; 2 -> "\r"; else -> "\n" }
-            updateInfo()
+            lineEnding = when (which) {
+                1 -> "\r\n"
+                2 -> "\r"
+                else -> "\n"
+            }
+            dirty = true
+            updateCursorInfo()
         }.show()
     }
 
@@ -788,160 +999,129 @@ class TextEditorActivity : ForgeActivity() {
         editor.setSelection((start + symbol.length).coerceAtMost(editor.length()))
     }
 
-    private fun lineBounds(position: Int = editor.selectionStart.coerceAtLeast(0)): IntRange {
-        val text = editor.text
-        val start = if (position <= 0) 0 else text.lastIndexOf('\n', (position - 1).coerceAtMost(text.lastIndex)).let { if (it < 0) 0 else it + 1 }
-        val endIndex = text.indexOf('\n', position.coerceAtMost(text.length)).let { if (it < 0) text.length else it }
-        return start until endIndex
-    }
-
-    private fun duplicateLine() {
-        if (readOnly) return
-        val range = lineBounds()
-        val line = editor.text.subSequence(range.first, range.last + 1).toString()
-        val insertAt = range.last + 1
-        editor.text.insert(insertAt, "\n$line")
-        editor.setSelection((insertAt + 1).coerceAtMost(editor.length()))
-    }
-
-    private fun deleteLine() {
-        if (readOnly) return
-        val range = lineBounds()
-        var start = range.first
-        var end = range.last + 1
-        if (end < editor.length() && editor.text[end] == '\n') end++ else if (start > 0 && editor.text[start - 1] == '\n') start--
-        editor.text.delete(start, end)
-        editor.setSelection(start.coerceAtMost(editor.length()))
-    }
-
-    private fun moveLine(direction: Int) {
-        if (readOnly || direction == 0) return
-        val text = editor.text.toString()
-        val lines = text.split('\n').toMutableList()
-        val cursor = editor.selectionStart.coerceAtLeast(0)
-        val current = text.take(cursor).count { it == '\n' }
-        val target = current + direction
-        if (current !in lines.indices || target !in lines.indices) return
-        val temp = lines[current]
-        lines[current] = lines[target]
-        lines[target] = temp
-        replaceWholeDocument(lines.joinToString("\n"), "Linha movida")
-        goToLine(target + 1)
-    }
-
-    private fun indentSelection(outdent: Boolean) = transformSelectedLines { line ->
-        if (outdent) when {
-            line.startsWith("    ") -> line.drop(4)
-            line.startsWith('\t') -> line.drop(1)
-            else -> line
-        } else "    $line"
-    }
-
-    private fun commentSelection(uncomment: Boolean) {
-        val prefix = profile.commentPrefix ?: return
-        if (prefix.contains(' ')) { toast("Comentário em bloco use a seleção nativa nesta linguagem"); return }
-        transformSelectedLines { line ->
-            if (uncomment) {
-                val indent = line.takeWhile { it == ' ' || it == '\t' }
-                val rest = line.drop(indent.length)
-                if (rest.startsWith(prefix)) indent + rest.removePrefix(prefix).removePrefix(" ") else line
-            } else {
-                val indent = line.takeWhile { it == ' ' || it == '\t' }
-                indent + prefix + " " + line.drop(indent.length)
-            }
-        }
-    }
-
-    private fun transformSelectedLines(transform: (String) -> String) {
-        if (readOnly) return
-        val text = editor.text.toString()
-        val startSelection = editor.selectionStart.coerceAtLeast(0)
-        val endSelection = editor.selectionEnd.coerceAtLeast(startSelection)
-        val blockStart = if (startSelection == 0) 0 else text.lastIndexOf('\n', startSelection - 1).let { if (it < 0) 0 else it + 1 }
-        val blockEnd = text.indexOf('\n', endSelection).let { if (it < 0) text.length else it }
-        val changed = text.substring(blockStart, blockEnd).split('\n').joinToString("\n", transform = transform)
-        editor.text.replace(blockStart, blockEnd, changed)
-        editor.setSelection(blockStart, (blockStart + changed.length).coerceAtMost(editor.length()))
-    }
-
     private fun copySelection(cut: Boolean) {
-        val start = editor.selectionStart
-        val end = editor.selectionEnd
-        if (start < 0 || end <= start) return
+        val start = editor.selectionStart.coerceAtLeast(0)
+        val end = editor.selectionEnd.coerceAtLeast(start)
+        if (end <= start) return
         val value = editor.text.subSequence(start, end).toString()
-        (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(displayName, value))
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        clipboard.setPrimaryClip(ClipData.newPlainText("Forge Manager", value))
         if (cut && !readOnly) editor.text.delete(start, end)
     }
 
     private fun pasteClipboard() {
         if (readOnly) return
-        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        val value = clipboard.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: return
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        val clip = clipboard.primaryClip ?: return
+        val value = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
         val start = editor.selectionStart.coerceAtLeast(0)
         val end = editor.selectionEnd.coerceAtLeast(start)
         editor.text.replace(start, end, value)
+        editor.setSelection((start + value.length).coerceAtMost(editor.length()))
     }
 
-    private fun scheduleHighlight() {
-        if (!heavyFeatures) return
-        handler.removeCallbacks(highlightTask)
-        handler.postDelayed(highlightTask, 120)
+    private fun focusEditor() {
+        if (readOnly) {
+            toast("Arquivo grande aberto em modo somente leitura por blocos")
+            return
+        }
+        editor.requestFocus()
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private fun toggleKeepScreenOn() {
+        keepScreenOn = !keepScreenOn
+        if (keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        toast(if (keepScreenOn) "Tela mantida ligada" else "Modo fixo desativado")
     }
 
     private fun requestClose() {
-        if (isDirty()) {
-            AlertDialog.Builder(this).setTitle("Alterações não salvas")
-                .setMessage("Salvar as alterações em $displayName?")
-                .setPositiveButton("Salvar") { _, _ -> save { finish() } }
-                .setNegativeButton("Descartar") { _, _ -> finish() }
-                .setNeutralButton("Cancelar", null).show()
-        } else finish()
+        if (!dirty || readOnly) {
+            finish()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Salvar alterações?")
+            .setMessage(displayName)
+            .setPositiveButton("Salvar") { _, _ -> save { finish() } }
+            .setNegativeButton("Descartar") { _, _ -> finish() }
+            .setNeutralButton("Cancelar", null)
+            .show()
     }
-
-    private fun isDirty(): Boolean = !loading && !readOnly && ::editor.isInitialized && editor.text.toString() != original
 
     private fun updateTitle() {
         if (!::title.isInitialized) return
         title.text = buildString {
             append(displayName)
-            append("  •  ").append(profile.label)
-            if (isDirty()) append("  •  alterado")
-            if (largeFileMode) append("  •  LARGE")
-            if (readOnly) append("  •  leitura")
+            if (dirty) append(" *")
+            if (pagedMode) append("  [LARGE]")
         }
     }
 
-    private fun updateInfo() {
-        if (!::info.isInitialized || !::editor.isInitialized) return
-        val pos = editor.selectionStart.coerceAtLeast(0).coerceAtMost(editor.length())
-        val text = editor.text
-        var line = 1
-        var lastBreak = -1
-        var i = 0
-        while (i < pos) {
-            if (text[i] == '\n') { line++; lastBreak = i }
-            i++
+    private fun updateCursorInfo() {
+        if (!::editor.isInitialized || !::cursorPosition.isInitialized || !::info.isInitialized) return
+        val pos = editor.selectionStart.coerceIn(0, editor.length())
+        val currentLayout = editor.layout
+        val lineIndex = if (currentLayout != null && currentLayout.lineCount > 0) {
+            currentLayout.getLineForOffset(pos.coerceAtMost(editor.length()))
+        } else {
+            var count = 0
+            var i = 0
+            val text = editor.text
+            while (i < pos) {
+                if (text[i] == '\n') count++
+                i++
+            }
+            count
         }
-        val column = pos - lastBreak
-        val lineLabel = when (lineEnding) { "\r\n" -> "CRLF"; "\r" -> "CR"; else -> "LF" }
-        info.text = "Ln $line  Col $column   •   ${charset.name()}   •   $lineLabel${if (wordWrap) "   •   wrap" else ""}"
+        val lineStart = if (currentLayout != null && lineIndex < currentLayout.lineCount) {
+            currentLayout.getLineStart(lineIndex)
+        } else {
+            editor.text.lastIndexOf('\n', (pos - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        }
+        val column = (pos - lineStart + 1).coerceAtLeast(1)
+        cursorPosition.text = "${lineIndex + 1}:$column"
+        val eol = when (lineEnding) { "\r\n" -> "CRLF"; "\r" -> "CR"; else -> "LF" }
+        info.text = buildString {
+            append("Ln ").append(lineIndex + 1).append("  Col ").append(column)
+            append("   •   ").append(charset.name()).append("   •   ").append(eol)
+            if (wordWrap) append("   •   wrap")
+            if (pagedMode) append("   •   ").append(pageLabel())
+            else append("   •   ").append(formatBytes(fileSize))
+        }
     }
 
-    private fun showError(message: String) = AlertDialog.Builder(this).setTitle("Editor").setMessage(message).setPositiveButton("OK", null).show()
+    private fun formatBytes(value: Long): String {
+        if (value < 1024) return "$value B"
+        val units = arrayOf("KB", "MB", "GB", "TB")
+        var size = value.toDouble()
+        var index = -1
+        do {
+            size /= 1024.0
+            index++
+        } while (size >= 1024.0 && index < units.lastIndex)
+        return String.format(java.util.Locale.US, "%.1f %s", size, units[index])
+    }
+
+    private fun showError(message: String) = AlertDialog.Builder(this)
+        .setTitle("Editor")
+        .setMessage(message)
+        .setPositiveButton("OK", null)
+        .show()
+
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val MAX_NORMAL_EDIT_BYTES = 8L * 1024 * 1024
-        private const val MAX_LARGE_EDIT_BYTES = 32L * 1024 * 1024
-        private const val PREVIEW_BYTES = 4 * 1024 * 1024
-        private const val HISTORY_TEXT_LIMIT = 2 * 1024 * 1024
-        private const val MAX_HISTORY = 50
-        private val BRACED_LANGUAGES = setOf(
-            EditorLanguage.JAVA, EditorLanguage.KOTLIN, EditorLanguage.JAVASCRIPT, EditorLanguage.TYPESCRIPT,
-            EditorLanguage.C, EditorLanguage.CPP, EditorLanguage.CSHARP, EditorLanguage.RUST, EditorLanguage.GO,
-            EditorLanguage.PHP, EditorLanguage.SWIFT, EditorLanguage.DART, EditorLanguage.CSS
-        )
+        private const val MAX_EDITABLE_BYTES = 2 * 1024 * 1024
+        private const val PAGE_BYTES = 384 * 1024
+        private const val HIGHLIGHT_BYTES = 512 * 1024L
+        private const val HISTORY_BYTES = 512 * 1024L
+        private const val MAX_HISTORY = 18
+        private const val HISTORY_DEBOUNCE_MS = 450L
+        private const val HIGHLIGHT_DEBOUNCE_MS = 220L
     }
 }
 
