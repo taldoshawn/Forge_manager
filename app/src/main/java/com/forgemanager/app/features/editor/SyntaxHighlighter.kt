@@ -11,24 +11,34 @@ object SyntaxHighlighter {
     private const val MAX_HIGHLIGHT_CHARS = 1_500_000
     private const val WINDOW_AROUND_CHANGE = 8_000
 
-    private val strings = Regex("(?s)(\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*')")
-    private val numbers = Regex("\\b(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)\\b")
-    private val operators = Regex("(?:===|!==|==|!=|<=|>=|=>|->|::|&&|\\|\\||\\+\\+|--|[+*/%=&|!<>?:~-])")
-    private val annotations = Regex("@[A-Za-z_][\\w.]*")
-    private val typeNames = Regex("\\b[A-Z][A-Za-z0-9_$]{2,}\\b")
-    private val functionNames = Regex("\\b[A-Za-z_$][\\w$]*(?=\\s*\\()")
-    private val htmlTagName = Regex("(?<=</?)[A-Za-z_][\\w:.-]*")
-    private val htmlAttribute = Regex("\\b[A-Za-z_:][\\w:.-]*(?=\\s*=)")
-    private val markdownHeading = Regex("(?m)^#{1,6}\\s+.+$")
-    private val markdownLink = Regex("!?\\[[^]\\n]+](?:\\([^)]*\\)|\\[[^]]*])")
-    private val markdownCode = Regex("(?s)```.*?```|`[^`\\n]+`")
-    private val smaliDirective = Regex("(?m)^\\s*\\.(?:class|super|implements|field|method|end\\s+method|locals|registers|annotation|end\\s+annotation|line|param|prologue|source)\\b[^\\n]*")
-    private val smaliRegister = Regex("\\b[vp]\\d+\\b")
-    private val smaliLabel = Regex("(?m)^\\s*:[A-Za-z0-9_.$-]+")
-    private val cssSelector = Regex("(?m)(?<![;{}])(?:^|})\\s*([^@{}][^{}]*?)(?=\\s*\\{)")
-    private val cssProperty = Regex("(?m)\\b[-A-Za-z][\\w-]*(?=\\s*:)")
-    private val hexColor = Regex("(?<![A-Za-z0-9])#[0-9A-Fa-f]{3,8}\\b")
-    private val colorFunction = Regex("\\b(?:rgb|rgba|hsl|hsla)\\([^)]*\\)", RegexOption.IGNORE_CASE)
+    // Regex support differs slightly between the Android ICU engine and the
+    // desktop JVM. Never let highlighting prevent a file from opening.
+    private val neverMatch = Regex("(?!x)x")
+    private fun safeRegex(pattern: String, options: Set<RegexOption> = emptySet()): Regex =
+        runCatching { Regex(pattern, options) }.getOrElse { neverMatch }
+
+    private val strings = safeRegex("(?s)(\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*')")
+    private val numbers = safeRegex("\\b(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)\\b")
+    private val operators = safeRegex("(?:===|!==|==|!=|<=|>=|=>|->|::|&&|\\|\\||\\+\\+|--|[+*/%=&|!<>?:~-])")
+    private val annotations = safeRegex("@[A-Za-z_][\\w.]*")
+    private val typeNames = safeRegex("\\b[A-Z][A-Za-z0-9_$]{2,}\\b")
+    private val functionNames = safeRegex("\\b[A-Za-z_$][\\w$]*(?=\\s*\\()")
+    private val htmlTagName = safeRegex("(?<=</?)[A-Za-z_][\\w:.-]*")
+    private val htmlAttribute = safeRegex("\\b[A-Za-z_:][\\w:.-]*(?=\\s*=)")
+    private val markdownHeading = safeRegex("(?m)^#{1,6}\\s+.+$")
+    private val markdownLink = safeRegex("!?\\[[^]\\n]+](?:\\([^)]*\\)|\\[[^]]*])")
+    private val markdownCode = safeRegex("(?s)```.*?```|`[^`\\n]+`")
+    private val smaliDirective = safeRegex("(?m)^\\s*\\.(?:class|super|implements|field|method|end\\s+method|locals|registers|annotation|end\\s+annotation|line|param|prologue|source)\\b[^\\n]*")
+    private val smaliRegister = safeRegex("\\b[vp]\\d+\\b")
+    private val smaliLabel = safeRegex("(?m)^\\s*:[A-Za-z0-9_.$-]+")
+
+    // Keep this deliberately simple. The previous expression used a literal
+    // closing brace in an alternation and crashes Android 15's ICU regex
+    // compiler on some devices while SyntaxHighlighter is initialized.
+    private val cssSelector = safeRegex("(?m)^\\s*([^@{}][^{}]*?)(?=\\s*\\{)")
+    private val cssProperty = safeRegex("(?m)\\b[-A-Za-z][\\w-]*(?=\\s*:)")
+    private val hexColor = safeRegex("(?<![A-Za-z0-9])#[0-9A-Fa-f]{3,8}\\b")
+    private val colorFunction = safeRegex("\\b(?:rgb|rgba|hsl|hsla)\\([^)]*\\)", setOf(RegexOption.IGNORE_CASE))
 
     private val keywords = mapOf(
         EditorLanguage.PYTHON to setOf("and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else", "except", "False", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise", "return", "True", "try", "while", "with", "yield"),
@@ -71,13 +81,15 @@ object SyntaxHighlighter {
         val profile = EditorProfile.forFile(fileName)
         val text = editable.subSequence(start, end).toString()
         fun paint(regex: Regex, color: Int, bold: Boolean = false, bg: Int? = null) {
-            regex.findAll(text).forEach { match ->
-                editable.setSpan(
-                    SyntaxSpan(fg = color, bg = bg, bold = bold),
-                    start + match.range.first,
-                    start + match.range.last + 1,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
+            runCatching {
+                regex.findAll(text).forEach { match ->
+                    editable.setSpan(
+                        SyntaxSpan(fg = color, bg = bg, bold = bold),
+                        start + match.range.first,
+                        start + match.range.last + 1,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                }
             }
         }
 
@@ -90,7 +102,7 @@ object SyntaxHighlighter {
         if (profile.language in setOf(EditorLanguage.XML, EditorLanguage.HTML)) {
             paint(htmlTagName, Color.rgb(192, 132, 252), true)
             paint(htmlAttribute, Color.rgb(96, 165, 250))
-            paint(Regex("(?s)<!--.*?-->"), Color.rgb(113, 128, 150))
+            paint(safeRegex("(?s)<!--.*?-->"), Color.rgb(113, 128, 150))
         }
 
         if (profile.language == EditorLanguage.SMALI) {
@@ -110,7 +122,7 @@ object SyntaxHighlighter {
             val words = keywords[profile.language] ?: genericKeywords
             if (words.isNotEmpty()) {
                 val opts = if (profile.language == EditorLanguage.SQL) setOf(RegexOption.IGNORE_CASE) else emptySet()
-                paint(Regex("\\b(?:${words.joinToString("|") { Regex.escape(it) }})\\b", opts), Color.rgb(96, 165, 250), true)
+                paint(safeRegex("\\b(?:${words.joinToString("|") { Regex.escape(it) }})\\b", opts), Color.rgb(96, 165, 250), true)
             }
             paint(numbers, Color.rgb(251, 191, 36))
             if (profile.language !in setOf(EditorLanguage.XML, EditorLanguage.HTML, EditorLanguage.JSON, EditorLanguage.YAML, EditorLanguage.TOML, EditorLanguage.SMALI)) {
@@ -139,10 +151,10 @@ object SyntaxHighlighter {
 
     private fun commentRegexes(language: EditorLanguage): List<Regex> = when (language) {
         EditorLanguage.PYTHON, EditorLanguage.YAML, EditorLanguage.TOML, EditorLanguage.SHELL, EditorLanguage.SMALI ->
-            listOf(Regex("(?m)#.*$"))
-        EditorLanguage.SQL, EditorLanguage.LUA -> listOf(Regex("(?m)--.*$"), Regex("(?s)/\\*.*?\\*/"))
+            listOf(safeRegex("(?m)#.*$"))
+        EditorLanguage.SQL, EditorLanguage.LUA -> listOf(safeRegex("(?m)--.*$"), safeRegex("(?s)/\\*.*?\\*/"))
         EditorLanguage.XML, EditorLanguage.HTML -> emptyList()
-        else -> listOf(Regex("(?m)//.*$"), Regex("(?s)/\\*.*?\\*/"))
+        else -> listOf(safeRegex("(?m)//.*$"), safeRegex("(?s)/\\*.*?\\*/"))
     }
 
     private fun parseHexColor(raw: String): Int? = runCatching {
