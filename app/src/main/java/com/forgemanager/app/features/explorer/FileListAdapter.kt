@@ -2,6 +2,8 @@ package com.forgemanager.app.features.explorer
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -35,6 +37,7 @@ class FileListAdapter(
     override fun getCount() = items.size
     override fun getItem(position: Int) = items[position]
     override fun getItemId(position: Int) = items[position].location.displayPath.hashCode().toLong()
+    override fun hasStableIds(): Boolean = true
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
         val holder: Holder
@@ -92,8 +95,30 @@ class FileListAdapter(
             listOf(type, formatBytes(item.size), date).filter(String::isNotBlank).joinToString("  •  ")
         }
 
-        view.setBackgroundResource(if (selected(item)) R.drawable.bg_file_item_selected else R.drawable.bg_file_item)
+        view.background = rowBackground(selected(item))
         return view
+    }
+
+    private fun rowBackground(isSelected: Boolean): GradientDrawable {
+        val accent = UiPreferences.accent(context)
+        val surface = UiPreferences.surface(context)
+        val selectedColor = Color.argb(
+            if (UiPreferences.isLight(context)) 42 else 72,
+            Color.red(accent), Color.green(accent), Color.blue(accent)
+        )
+        return GradientDrawable().apply {
+            setColor(if (isSelected) blendOver(surface, selectedColor) else surface)
+            setStroke(dp(1), if (isSelected) Color.argb(130, Color.red(accent), Color.green(accent), Color.blue(accent)) else UiPreferences.divider(context))
+        }
+    }
+
+    private fun blendOver(background: Int, overlay: Int): Int {
+        val a = Color.alpha(overlay) / 255f
+        return Color.rgb(
+            (Color.red(overlay) * a + Color.red(background) * (1f - a)).toInt(),
+            (Color.green(overlay) * a + Color.green(background) * (1f - a)).toInt(),
+            (Color.blue(overlay) * a + Color.blue(background) * (1f - a)).toInt()
+        )
     }
 
     private fun applyFileIcon(view: ImageView, item: FileNode, kind: FileKind) {
