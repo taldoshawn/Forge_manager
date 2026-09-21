@@ -29,14 +29,12 @@ object UiPreferences {
         val preferences = prefs(context)
         val saved = preferences.getString(KEY_THEME, null)
         if (saved in setOf(THEME_WHITE, THEME_GRAY, THEME_DARK)) return saved!!
-        // Preserve old users who explicitly enabled the former AMOLED switch,
-        // but migrate them to normal dark rather than #000000.
         return if (preferences.getBoolean(KEY_AMOLED, false)) THEME_DARK else THEME_WHITE
     }
 
     fun isLight(context: Context): Boolean = themeMode(context) != THEME_DARK
-    fun compactRows(context: Context): Boolean = prefs(context).getBoolean(KEY_COMPACT, false)
-    fun largeIcons(context: Context): Boolean = prefs(context).getBoolean(KEY_LARGE_ICONS, true)
+    fun compactRows(context: Context): Boolean = prefs(context).getBoolean(KEY_COMPACT, true)
+    fun largeIcons(context: Context): Boolean = prefs(context).getBoolean(KEY_LARGE_ICONS, false)
     fun showHiddenDefault(context: Context): Boolean = prefs(context).getBoolean(KEY_SHOW_HIDDEN, false)
     fun openArchivesInternally(context: Context): Boolean = prefs(context).getBoolean(KEY_ARCHIVE_INTERNAL, true)
     fun confirmDelete(context: Context): Boolean = prefs(context).getBoolean(KEY_CONFIRM_DELETE, true)
@@ -53,7 +51,6 @@ object UiPreferences {
         else -> Color.rgb(31, 126, 232)
     }
 
-    /** Secondary color used for gradients and secondary actions. */
     fun accentAlt(context: Context): Int = when (accentName(context)) {
         "cyan" -> Color.rgb(17, 109, 219)
         "violet" -> Color.rgb(215, 75, 151)
@@ -102,7 +99,6 @@ object UiPreferences {
         prefs(context).edit().putString(KEY_THEME, value).remove(KEY_AMOLED).apply()
     }
 
-    // Kept so older call-sites and migrations remain source-compatible.
     fun amoled(context: Context): Boolean = themeMode(context) == THEME_DARK
     fun setAmoled(context: Context, value: Boolean) = setThemeMode(context, if (value) THEME_DARK else THEME_WHITE)
 
