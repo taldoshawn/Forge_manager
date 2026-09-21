@@ -43,7 +43,7 @@
                 android:textSize="15sp"
                 android:textStyle="bold" />
 
-            <TextView
+            <com.forgemanager.app.features.explorer.ThemedTopInfoTextView
                 android:id="@+id/folderInfo"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -62,10 +62,9 @@
             android:tint="#FFFFFF" />
     </com.forgemanager.app.features.explorer.ThemedTopBarLayout>
 
-    <View
+    <com.forgemanager.app.features.explorer.ThemedDividerView
         android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/fm_divider" />
+        android:layout_height="1dp" />
 
     <LinearLayout
         android:id="@+id/panes"
@@ -82,11 +81,10 @@
             android:layout_height="match_parent"
             android:layout_weight="1" />
 
-        <View
+        <com.forgemanager.app.features.explorer.ThemedDividerView
             android:id="@+id/paneDivider"
             android:layout_width="1dp"
-            android:layout_height="match_parent"
-            android:background="@color/fm_divider" />
+            android:layout_height="match_parent" />
 
         <include
             android:id="@+id/rightPane"
