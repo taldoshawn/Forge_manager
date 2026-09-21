@@ -35,7 +35,13 @@ object ExplorerUiEnhancer {
             }
 
             val white = ColorStateList.valueOf(Color.WHITE)
-            activity.findViewById<ImageButton>(R.id.menuButton)?.imageTintList = white
+            activity.findViewById<ImageButton>(R.id.menuButton)?.apply {
+                imageTintList = white
+                // The hamburger now opens the full MT-style power-tool drawer.
+                // This lifecycle hook runs after MainActivity.onResume(), so it
+                // intentionally replaces the old compact PopupMenu listener.
+                setOnClickListener { ForgeSideDrawer.show(activity) }
+            }
             activity.findViewById<ImageButton>(R.id.moreButton)?.imageTintList = white
             activity.findViewById<TextView>(R.id.activePath)?.setTextColor(Color.WHITE)
             activity.findViewById<TextView>(R.id.folderInfo)?.setTextColor(Color.argb(225, 238, 247, 255))
