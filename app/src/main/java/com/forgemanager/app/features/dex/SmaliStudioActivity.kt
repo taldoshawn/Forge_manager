@@ -172,6 +172,7 @@ class SmaliStudioActivity : ForgeActivity() {
                         .toList()
                 }
             }.onSuccess {
+                if (!canTouchUi()) return@onSuccess
                 files = it
                 disassembled = true
                 rebuilt = false
@@ -185,12 +186,13 @@ class SmaliStudioActivity : ForgeActivity() {
     }
 
     private fun refreshResults() {
-        if (!disassembled || !::list.isInitialized) return
+        if (!disassembled || !::list.isInitialized || !canTouchUi()) return
         val search = query.text?.toString().orEmpty().trim()
         status.text = "$displayName • buscando ${mode.label.lowercase(Locale.ROOT)}…"
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { buildRows(mode, search) } }
                 .onSuccess {
+                    if (!canTouchUi()) return@onSuccess
                     rows = it
                     list.adapter = ArrayAdapter(this@SmaliStudioActivity, android.R.layout.simple_list_item_1, it.map(Row::display))
                     status.text = "$displayName • ${it.size} resultado(s) • ${mode.label}"
@@ -234,6 +236,7 @@ class SmaliStudioActivity : ForgeActivity() {
     }
 
     private fun openRow(row: Row) {
+        if (!canTouchUi()) return
         val file = row.file
         val intent = Intent(this, TextEditorActivity::class.java)
             .putFileLocation(FileLocation.Direct(file.path), file.name)
@@ -247,7 +250,17 @@ class SmaliStudioActivity : ForgeActivity() {
     private fun showRowInfo(row: Row) {
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { inspectSmaliFile(row.file) } }
-                .onSuccess { AlertDialog.Builder(this@SmaliStudioActivity).setTitle(row.relative).setMessage(it).setPositiveButton("Abrir") { _, _ -> openRow(row) }.setNegativeButton("Fechar", null).show() }
+                .onSuccess {
+                    if (!canTouchUi()) return@onSuccess
+                    runCatching {
+                        AlertDialog.Builder(this@SmaliStudioActivity)
+                            .setTitle(row.relative)
+                            .setMessage(it)
+                            .setPositiveButton("Abrir") { _, _ -> openRow(row) }
+                            .setNegativeButton("Fechar", null)
+                            .show()
+                    }
+                }
                 .onFailure { showError(cleanError(it)) }
         }
     }
@@ -307,6 +320,7 @@ class SmaliStudioActivity : ForgeActivity() {
                     rebuiltDex.length()
                 }
             }.onSuccess {
+                if (!canTouchUi()) return@onSuccess
                 rebuilt = true
                 status.text = "$displayName • rebuild validado • ${it / 1024} KB"
                 toast("DEX recompilado e validado")
@@ -319,18 +333,26 @@ class SmaliStudioActivity : ForgeActivity() {
 
     private fun applyRebuilt() {
         if (!rebuilt || !rebuiltDex.isFile) { toast("Faça o rebuild antes"); return }
-        AlertDialog.Builder(this)
-            .setTitle("Aplicar DEX recompilado?")
-            .setMessage("O DEX validado substituirá o local original. A escrita será transacional quando o backend permitir.")
-            .setPositiveButton("Aplicar") { _, _ ->
-                scope.launch {
-                    runCatching { withContext(Dispatchers.IO) { applyValidatedDex() } }
-                        .onSuccess { toast("DEX aplicado"); status.text = "$displayName • aplicado" }
-                        .onFailure { showError(cleanError(it)) }
+        if (!canTouchUi()) return
+        runCatching {
+            AlertDialog.Builder(this)
+                .setTitle("Aplicar DEX recompilado?")
+                .setMessage("O DEX validado substituirá o local original. A escrita será transacional quando o backend permitir.")
+                .setPositiveButton("Aplicar") { _, _ ->
+                    scope.launch {
+                        runCatching { withContext(Dispatchers.IO) { applyValidatedDex() } }
+                            .onSuccess {
+                                if (canTouchUi()) {
+                                    toast("DEX aplicado")
+                                    status.text = "$displayName • aplicado"
+                                }
+                            }
+                            .onFailure { showError(cleanError(it)) }
+                    }
                 }
-            }
-            .setNegativeButton("Cancelar", null)
-            .show()
+                .setNegativeButton("Cancelar", null)
+                .show()
+        }
     }
 
     private suspend fun applyValidatedDex() {
@@ -386,13 +408,23 @@ class SmaliStudioActivity : ForgeActivity() {
             .take(2_000)
     }
 
-    private fun showError(message: String) = AlertDialog.Builder(this)
-        .setTitle("Smali/DEX Studio")
-        .setMessage(message)
-        .setPositiveButton("OK", null)
-        .show()
+    private fun canTouchUi(): Boolean = !isFinishing && !isDestroyed
 
-    private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    private fun showError(message: String) {
+        if (!canTouchUi()) return
+        runCatching {
+            AlertDialog.Builder(this)
+                .setTitle("Smali/DEX Studio")
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
+    private fun toast(message: String) {
+        if (canTouchUi()) Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun workers() = Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
 
