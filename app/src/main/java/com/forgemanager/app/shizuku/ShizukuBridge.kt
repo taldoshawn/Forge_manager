@@ -39,15 +39,19 @@ class ShizukuBridge(private val context: Context) {
     }
 
     fun start() {
-        Shizuku.addBinderReceivedListenerSticky(binderReceived)
-        Shizuku.addBinderDeadListener(binderDead)
+        // Shizuku is an optional backend. Some ROMs/devices can expose an incomplete
+        // provider/binder environment; none of those failures may crash app startup.
+        runCatching { Shizuku.addBinderReceivedListenerSticky(binderReceived) }
+        runCatching { Shizuku.addBinderDeadListener(binderDead) }
         binderAlive = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
         if (binderAlive && hasPermission()) bindService()
     }
 
     fun stop() {
-        Shizuku.removeBinderReceivedListener(binderReceived)
-        Shizuku.removeBinderDeadListener(binderDead)
+        runCatching { Shizuku.removeBinderReceivedListener(binderReceived) }
+        runCatching { Shizuku.removeBinderDeadListener(binderDead) }
+        service = null
+        binderAlive = false
     }
 
     fun hasPermission(): Boolean = binderAlive && runCatching {
@@ -56,12 +60,21 @@ class ShizukuBridge(private val context: Context) {
 
     fun requestPermission(requestCode: Int) {
         if (!binderAlive) throw IllegalStateException("Shizuku não está em execução")
-        if (Shizuku.shouldShowRequestPermissionRationale()) throw SecurityException("Permissão Shizuku negada permanentemente")
-        Shizuku.requestPermission(requestCode)
+        if (runCatching { Shizuku.shouldShowRequestPermissionRationale() }.getOrDefault(false)) {
+            throw SecurityException("Permissão Shizuku negada permanentemente")
+        }
+        runCatching { Shizuku.requestPermission(requestCode) }
+            .getOrElse { throw IllegalStateException("Não foi possível solicitar permissão ao Shizuku", it) }
     }
 
     fun bindService() {
-        if (service == null && hasPermission()) Shizuku.bindUserService(args, connection)
+        if (service == null && hasPermission()) {
+            runCatching { Shizuku.bindUserService(args, connection) }
+                .onFailure {
+                    service = null
+                    binderAlive = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
+                }
+        }
     }
 
     fun status(): String = when {
