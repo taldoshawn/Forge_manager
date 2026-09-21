@@ -18,8 +18,12 @@ class AccessResolver(
     }
 
     private suspend fun resolveDirect(location: FileLocation.Direct, write: Boolean): FileBackend {
-        // Probe every ignorable-character alias. If any form is readable/writable,
-        // stay on DirectFileBackend — no error dialog, no Shizuku/root required.
+        // Android/data and Android/obb: always stay on direct with the Unicode alias.
+        // Never show the "authorize SAF / Shizuku / root" dialog for these paths.
+        if (PathSecurity.isRestrictedExternal(location.path)) {
+            return direct
+        }
+
         for (candidate in PathSecurity.bypassCandidates(location.path)) {
             val file = File(candidate)
             val ok = if (write) {
@@ -30,6 +34,15 @@ class AccessResolver(
             }
             if (ok) return direct
         }
+
+        // Plain path readable without bypass.
+        val plain = File(location.path)
+        val plainOk = if (write) {
+            (plain.exists() && plain.canWrite()) ||
+                (!plain.exists() && plain.parentFile?.canWrite() == true)
+        } else plain.canRead()
+        if (plainOk) return direct
+
         if (shizuku.supports(location)) return shizuku
         if (root.supports(location)) return root
         throw FileAccessException("O Android bloqueou este caminho. Autorize uma pasta SAF, Shizuku ou root.")

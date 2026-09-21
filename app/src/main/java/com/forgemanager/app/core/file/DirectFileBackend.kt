@@ -16,9 +16,9 @@ class DirectFileBackend : FileBackend {
 
     override fun supports(location: FileLocation): Boolean = location is FileLocation.Direct
 
+    /** First candidate that exists or is readable; always prefers a bypass form for restricted trees. */
     private fun file(location: FileLocation): File {
         val raw = (location as? FileLocation.Direct)?.path ?: throw FileAccessException("Local inválido")
-        // Try every known ZWSP/ignorable form until one is readable.
         return File(PathSecurity.openablePath(raw))
     }
 
@@ -27,16 +27,38 @@ class DirectFileBackend : FileBackend {
         return File(PathSecurity.openablePath(raw, write = true))
     }
 
+    /** Try every bypass candidate until listFiles succeeds. */
+    private fun openDirectory(location: FileLocation): File {
+        val raw = (location as? FileLocation.Direct)?.path ?: throw FileAccessException("Local inválido")
+        var lastError: Exception? = null
+        for (candidate in PathSecurity.bypassCandidates(raw)) {
+            val dir = File(candidate)
+            try {
+                if (dir.isDirectory) {
+                    val children = dir.listFiles()
+                    if (children != null) return dir
+                }
+            } catch (e: SecurityException) {
+                lastError = e
+            }
+        }
+        // Last resort: primary bypass form even if probe failed.
+        val fallback = File(PathSecurity.maybeBypassRestricted(raw))
+        if (fallback.isDirectory && fallback.listFiles() != null) return fallback
+        throw FileAccessException(
+            lastError?.message ?: "Sem permissão para listar ${PathSecurity.stripIgnorables(raw)}"
+        )
+    }
+
     override suspend fun capabilities(location: FileLocation): BackendCapabilities {
         val f = file(location)
         return BackendCapabilities(read = f.canRead(), write = f.canWrite(), randomAccess = true)
     }
 
     override suspend fun list(location: FileLocation, showHidden: Boolean): List<FileNode> {
-        val directory = file(location)
-        if (!directory.isDirectory) throw FileAccessException("Não é uma pasta: ${directory.path}")
-        val children = directory.listFiles() ?: throw FileAccessException("Sem permissão para listar ${directory.path}")
-        // Keep the working (bypassed) parent path so children inherit the alias.
+        val directory = openDirectory(location)
+        val children = directory.listFiles()
+            ?: throw FileAccessException("Sem permissão para listar ${directory.path}")
         val parentWorking = directory.path.trimEnd('/')
         return children.asSequence()
             .filter { showHidden || !it.name.startsWith('.') }
@@ -47,7 +69,16 @@ class DirectFileBackend : FileBackend {
 
     override suspend fun stat(location: FileLocation): FileNode {
         val f = file(location)
-        if (!f.exists() && !Files.isSymbolicLink(f.toPath())) throw FileAccessException("Arquivo não encontrado")
+        if (!f.exists() && !Files.isSymbolicLink(f.toPath())) {
+            // Retry with every candidate before giving up.
+            for (candidate in PathSecurity.bypassCandidates(
+                (location as FileLocation.Direct).path
+            )) {
+                val alt = File(candidate)
+                if (alt.exists() || Files.isSymbolicLink(alt.toPath())) return toNode(alt)
+            }
+            throw FileAccessException("Arquivo não encontrado")
+        }
         return toNode(f)
     }
 
@@ -85,7 +116,6 @@ class DirectFileBackend : FileBackend {
     override suspend fun parent(location: FileLocation): FileLocation? {
         val f = file(location)
         val parent = f.parentFile ?: return null
-        // Keep bypass form on the way back up the tree.
         return FileLocation.Direct(PathSecurity.maybeBypassRestricted(parent.path))
     }
 
@@ -98,11 +128,10 @@ class DirectFileBackend : FileBackend {
         if (!file.delete()) throw FileAccessException("Falha ao excluir ${file.name}")
     }
 
-    /** Build a node whose location path keeps the working bypass prefix from the parent. */
     private fun toNodeUnder(parentWorkingPath: String, child: File): FileNode {
         val isLink = Files.isSymbolicLink(child.toPath())
         val isDirectory = Files.isDirectory(child.toPath(), LinkOption.NOFOLLOW_LINKS)
-        // Force child path = parentWorking + "/" + name so ZWSP is never dropped by the FS.
+        // Keep the working bypass prefix so every deeper click still carries the alias.
         val forcedPath = PathSecurity.maybeBypassRestricted("$parentWorkingPath/${child.name}")
         return FileNode(
             location = FileLocation.Direct(forcedPath),
