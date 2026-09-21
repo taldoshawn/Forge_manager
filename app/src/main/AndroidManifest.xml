@@ -61,7 +61,11 @@
         <activity android:name=".features.apk.ApkInspectorActivity" android:exported="false" />
         <activity android:name=".features.dex.DexInspectorActivity" android:exported="false" />
         <activity android:name=".features.editor.HexViewerActivity" android:exported="false" />
-        <activity android:name=".features.editor.TextEditorActivity" android:exported="false" />
+        <activity android:name=".features.editor.MtTextEditorActivity" android:exported="false" />
+        <activity-alias
+            android:name=".features.editor.TextEditorActivity"
+            android:targetActivity=".features.editor.MtTextEditorActivity"
+            android:exported="false" />
         <activity android:name=".features.compare.TextCompareActivity" android:exported="false" />
 
         <activity android:name=".MainActivity" android:exported="true">
