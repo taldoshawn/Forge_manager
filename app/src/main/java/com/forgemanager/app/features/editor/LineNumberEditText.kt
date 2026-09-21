@@ -22,7 +22,7 @@ class LineNumberEditText @JvmOverloads constructor(
     var onSelectionChangedListener: ((start: Int, end: Int) -> Unit)? = null
     private var requestedLineConsumed = false
     private var fastDragging = false
-    private var editorTextSp = 14f
+    private var editorTextSp = 13f
 
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(100, 116, 139)
@@ -35,14 +35,15 @@ class LineNumberEditText @JvmOverloads constructor(
         strokeWidth = resources.displayMetrics.density
     }
     private val fastTrackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(65, 110, 120, 135)
+        color = Color.argb(42, 110, 120, 135)
     }
     private val fastThumbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(31, 126, 232)
     }
-    private val gutter = (48 * resources.displayMetrics.density).toInt()
-    private val fastTouchWidth = (26 * resources.displayMetrics.density).toInt()
-    private val fastRailWidth = (4 * resources.displayMetrics.density).coerceAtLeast(2f)
+    private val gutter = (40 * resources.displayMetrics.density).toInt()
+    private val fastTouchWidth = (14 * resources.displayMetrics.density).toInt()
+    private val fastRailWidth = (2 * resources.displayMetrics.density).coerceAtLeast(2f)
+    private val fastRailInset = (6 * resources.displayMetrics.density).toInt()
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
@@ -72,7 +73,8 @@ class LineNumberEditText @JvmOverloads constructor(
         setTextSize(TypedValue.COMPLEX_UNIT_SP, editorTextSp)
         setTextColor(Color.rgb(226, 232, 240))
         setBackgroundColor(Color.rgb(15, 18, 24))
-        setPadding(gutter, dp(10), dp(12), dp(12))
+        // Reserve a real lane on the right so the fast-scroll thumb never covers code.
+        setPadding(gutter, dp(7), dp(26), dp(10))
         gravity = android.view.Gravity.TOP or android.view.Gravity.START
         setHorizontallyScrolling(true)
         includeFontPadding = false
@@ -85,7 +87,7 @@ class LineNumberEditText @JvmOverloads constructor(
         linePaint.color = gutterText
         dividerPaint.color = divider
         fastTrackPaint.color = Color.argb(
-            if (UiPreferences.isLight(context)) 45 else 82,
+            if (UiPreferences.isLight(context)) 35 else 65,
             Color.red(divider), Color.green(divider), Color.blue(divider)
         )
         fastThumbPaint.color = UiPreferences.accent(context)
@@ -126,9 +128,9 @@ class LineNumberEditText @JvmOverloads constructor(
             val last = currentLayout.getLineForVertical(scrollY + height)
             for (line in first..last) {
                 val baseline = currentLayout.getLineBaseline(line).toFloat()
-                canvas.drawText((line + 1).toString(), gutter - dp(9).toFloat(), baseline, linePaint)
+                canvas.drawText((line + 1).toString(), gutter - dp(8).toFloat(), baseline, linePaint)
             }
-            val x = gutter - dp(4).toFloat()
+            val x = gutter - dp(3).toFloat()
             canvas.drawLine(x, scrollY.toFloat(), x, (scrollY + height).toFloat(), dividerPaint)
         }
         super.onDraw(canvas)
@@ -183,14 +185,14 @@ class LineNumberEditText @JvmOverloads constructor(
         if (maxScroll <= 0 || height <= 0) return
         val visibleTop = scrollY.toFloat()
         val visibleBottom = visibleTop + height
-        val right = scrollX + width - dp(3).toFloat()
+        val right = scrollX + width - fastRailInset.toFloat()
         val left = right - fastRailWidth
-        val trackTop = visibleTop + dp(8)
-        val trackBottom = visibleBottom - dp(8)
+        val trackTop = visibleTop + dp(6)
+        val trackBottom = visibleBottom - dp(6)
         val available = (trackBottom - trackTop).coerceAtLeast(1f)
         val layoutHeight = (layout?.height ?: height).coerceAtLeast(1)
         val viewport = (height - compoundPaddingTop - compoundPaddingBottom).coerceAtLeast(1)
-        val thumbHeight = max(dp(42).toFloat(), available * viewport / layoutHeight.toFloat()).coerceAtMost(available)
+        val thumbHeight = max(dp(28).toFloat(), available * viewport / layoutHeight.toFloat()).coerceAtMost(available)
         val fraction = (scrollY.toFloat() / maxScroll.toFloat()).coerceIn(0f, 1f)
         val thumbTop = trackTop + (available - thumbHeight) * fraction
         val radius = fastRailWidth
@@ -206,8 +208,8 @@ class LineNumberEditText @JvmOverloads constructor(
     private fun fastScrollTo(localY: Float) {
         val maxScroll = maxScrollY()
         if (maxScroll <= 0) return
-        val top = dp(8).toFloat()
-        val bottom = (height - dp(8)).toFloat().coerceAtLeast(top + 1f)
+        val top = dp(6).toFloat()
+        val bottom = (height - dp(6)).toFloat().coerceAtLeast(top + 1f)
         val fraction = ((localY - top) / (bottom - top)).coerceIn(0f, 1f)
         scrollTo(scrollX, (fraction * maxScroll).toInt())
         invalidate()
