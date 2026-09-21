@@ -16,7 +16,9 @@ class ForgeApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         graph = AppGraph(this)
-        graph.shizuku.start()
+        // Shizuku is optional. A missing/unsupported Shizuku environment must never
+        // prevent the file manager itself from starting.
+        runCatching { graph.shizuku.start() }
     }
 }
 
