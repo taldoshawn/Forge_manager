@@ -6,7 +6,7 @@
     android:orientation="vertical"
     android:background="@color/fm_background">
 
-    <LinearLayout
+    <com.forgemanager.app.features.explorer.ThemedTopBarLayout
         android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="60dp"
@@ -60,7 +60,7 @@
             android:contentDescription="@string/more"
             android:src="@drawable/ic_nav_more"
             android:tint="#FFFFFF" />
-    </LinearLayout>
+    </com.forgemanager.app.features.explorer.ThemedTopBarLayout>
 
     <View
         android:layout_width="match_parent"
