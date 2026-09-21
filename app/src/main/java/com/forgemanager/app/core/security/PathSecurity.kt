@@ -42,10 +42,51 @@ object PathSecurity {
      */
     fun restrictedExternalPath(segment: String): String {
         val base = Environment.getExternalStorageDirectory()
-        // Prefer the form that currently works across 14/15/16: Android/\u200B<data|obb>
         return File(base, "Android/$ZWSP$segment").path
     }
 
     fun androidDataBypass(): String = restrictedExternalPath("data")
     fun androidObbBypass(): String = restrictedExternalPath("obb")
+
+    /**
+     * If [path] is Android/data, Android/obb, or anything under them (plain form),
+     * rewrite the restricted segment to the ZWSP alias so the kernel opens the real dir
+     * while the policy string-match fails.
+     * Already-bypassed paths and unrelated paths are returned unchanged.
+     */
+    fun maybeBypassRestricted(path: String): String {
+        if (path.isBlank()) return path
+        val base = Environment.getExternalStorageDirectory().path.trimEnd('/')
+        val dataPlain = "$base/Android/data"
+        val obbPlain = "$base/Android/obb"
+        val dataBypass = androidDataBypass()
+        val obbBypass = androidObbBypass()
+        val p = path.trimEnd('/')
+
+        return when {
+            p == dataPlain || p.startsWith("$dataPlain/") ->
+                dataBypass + p.removePrefix(dataPlain)
+            p == obbPlain || p.startsWith("$obbPlain/") ->
+                obbBypass + p.removePrefix(obbPlain)
+            // also catch /sdcard style if it appears
+            p.endsWith("/Android/data") || p.contains("/Android/data/") ->
+                p.replace("/Android/data", "/Android/$ZWSP" + "data")
+            p.endsWith("/Android/obb") || p.contains("/Android/obb/") ->
+                p.replace("/Android/obb", "/Android/$ZWSP" + "obb")
+            else -> path
+        }
+    }
+
+    fun isRestrictedExternal(path: String): Boolean {
+        val normalized = path.replace(ZWSP, "").trimEnd('/')
+        val base = Environment.getExternalStorageDirectory().path.trimEnd('/')
+        return normalized == "$base/Android/data" ||
+            normalized.startsWith("$base/Android/data/") ||
+            normalized == "$base/Android/obb" ||
+            normalized.startsWith("$base/Android/obb/") ||
+            normalized.endsWith("/Android/data") ||
+            normalized.contains("/Android/data/") ||
+            normalized.endsWith("/Android/obb") ||
+            normalized.contains("/Android/obb/")
+    }
 }
