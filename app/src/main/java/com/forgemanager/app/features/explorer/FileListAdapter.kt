@@ -36,7 +36,17 @@ class FileListAdapter(
 
     override fun getCount() = items.size
     override fun getItem(position: Int) = items[position]
-    override fun getItemId(position: Int) = items[position].location.displayPath.hashCode().toLong()
+
+    /**
+     * ListView may briefly ask for the previous selected row id after a refresh
+     * replaced a non-empty directory with an empty one. Returning INVALID_ROW_ID
+     * instead of indexing the new empty list keeps that normal race from
+     * crashing the explorer.
+     */
+    override fun getItemId(position: Int): Long =
+        items.getOrNull(position)?.location?.displayPath?.hashCode()?.toLong()
+            ?: android.widget.AdapterView.INVALID_ROW_ID
+
     override fun hasStableIds(): Boolean = true
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
