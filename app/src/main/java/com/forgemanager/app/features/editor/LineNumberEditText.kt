@@ -8,7 +8,9 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.widget.EditText
 import com.forgemanager.app.features.settings.UiPreferences
 import kotlin.math.max
@@ -20,10 +22,11 @@ class LineNumberEditText @JvmOverloads constructor(
     var onSelectionChangedListener: ((start: Int, end: Int) -> Unit)? = null
     private var requestedLineConsumed = false
     private var fastDragging = false
+    private var editorTextSp = 14f
 
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(100, 116, 139)
-        textSize = 11 * resources.displayMetrics.scaledDensity
+        textSize = lineNumberSizePx()
         textAlign = Paint.Align.RIGHT
         typeface = Typeface.MONOSPACE
     }
@@ -41,9 +44,32 @@ class LineNumberEditText @JvmOverloads constructor(
     private val fastTouchWidth = (26 * resources.displayMetrics.density).toInt()
     private val fastRailWidth = (4 * resources.displayMetrics.density).coerceAtLeast(2f)
 
+    private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+            fastDragging = false
+            parent?.requestDisallowInterceptTouchEvent(true)
+            return true
+        }
+
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            val next = (editorTextSp * detector.scaleFactor).coerceIn(MIN_TEXT_SP, MAX_TEXT_SP)
+            if (kotlin.math.abs(next - editorTextSp) < 0.03f) return true
+            editorTextSp = next
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, editorTextSp)
+            linePaint.textSize = lineNumberSizePx()
+            requestLayout()
+            invalidate()
+            return true
+        }
+
+        override fun onScaleEnd(detector: ScaleGestureDetector) {
+            parent?.requestDisallowInterceptTouchEvent(false)
+        }
+    })
+
     init {
         typeface = Typeface.MONOSPACE
-        setTextSize(14f)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, editorTextSp)
         setTextColor(Color.rgb(226, 232, 240))
         setBackgroundColor(Color.rgb(15, 18, 24))
         setPadding(gutter, dp(10), dp(12), dp(12))
@@ -58,7 +84,10 @@ class LineNumberEditText @JvmOverloads constructor(
         setTextColor(text)
         linePaint.color = gutterText
         dividerPaint.color = divider
-        fastTrackPaint.color = Color.argb(if (UiPreferences.isLight(context)) 45 else 82, Color.red(divider), Color.green(divider), Color.blue(divider))
+        fastTrackPaint.color = Color.argb(
+            if (UiPreferences.isLight(context)) 45 else 82,
+            Color.red(divider), Color.green(divider), Color.blue(divider)
+        )
         fastThumbPaint.color = UiPreferences.accent(context)
         invalidate()
     }
@@ -68,6 +97,16 @@ class LineNumberEditText @JvmOverloads constructor(
         maxLines = Int.MAX_VALUE
         invalidate()
     }
+
+    fun setEditorZoomSp(value: Float) {
+        editorTextSp = value.coerceIn(MIN_TEXT_SP, MAX_TEXT_SP)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, editorTextSp)
+        linePaint.textSize = lineNumberSizePx()
+        requestLayout()
+        invalidate()
+    }
+
+    fun editorZoomSp(): Float = editorTextSp
 
     override fun onTextChanged(text: CharSequence?, start: Int, lengthBefore: Int, lengthAfter: Int) {
         super.onTextChanged(text, start, lengthBefore, lengthAfter)
@@ -97,6 +136,13 @@ class LineNumberEditText @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        scaleDetector.onTouchEvent(event)
+        if (scaleDetector.isInProgress || event.pointerCount > 1) {
+            fastDragging = false
+            parent?.requestDisallowInterceptTouchEvent(true)
+            return true
+        }
+
         val hitRail = event.x >= width - fastTouchWidth
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -121,6 +167,7 @@ class LineNumberEditText @JvmOverloads constructor(
                     performClick()
                     return true
                 }
+                parent?.requestDisallowInterceptTouchEvent(false)
             }
         }
         return super.onTouchEvent(event)
@@ -148,7 +195,12 @@ class LineNumberEditText @JvmOverloads constructor(
         val thumbTop = trackTop + (available - thumbHeight) * fraction
         val radius = fastRailWidth
         canvas.drawRoundRect(RectF(left, trackTop, right, trackBottom), radius, radius, fastTrackPaint)
-        canvas.drawRoundRect(RectF(left - dp(1), thumbTop, right + dp(1), thumbTop + thumbHeight), radius * 1.5f, radius * 1.5f, fastThumbPaint)
+        canvas.drawRoundRect(
+            RectF(left - dp(1), thumbTop, right + dp(1), thumbTop + thumbHeight),
+            radius * 1.5f,
+            radius * 1.5f,
+            fastThumbPaint
+        )
     }
 
     private fun fastScrollTo(localY: Float) {
@@ -166,6 +218,9 @@ class LineNumberEditText @JvmOverloads constructor(
         val viewport = (height - compoundPaddingTop - compoundPaddingBottom).coerceAtLeast(0)
         return (currentLayout.height - viewport).coerceAtLeast(0)
     }
+
+    private fun lineNumberSizePx(): Float =
+        (editorTextSp * 0.78f).coerceIn(8.5f, 24f) * resources.displayMetrics.scaledDensity
 
     private fun consumeRequestedLine() {
         if (requestedLineConsumed) return
@@ -194,5 +249,7 @@ class LineNumberEditText @JvmOverloads constructor(
 
     companion object {
         const val EXTRA_REQUESTED_LINE = "requested_line"
+        private const val MIN_TEXT_SP = 9f
+        private const val MAX_TEXT_SP = 34f
     }
 }
