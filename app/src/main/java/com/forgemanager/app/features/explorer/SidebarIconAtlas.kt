@@ -21,7 +21,7 @@ object SidebarIconAtlas {
     private const val COLUMNS = 5
     private const val TILE_PX = 36
     private const val SLOT_COUNT = 20
-    private const val ICON_DP = 36
+    private const val ICON_DP = 30
 
     private val sheetCache = object : LruCache<String, Bitmap>(3 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
