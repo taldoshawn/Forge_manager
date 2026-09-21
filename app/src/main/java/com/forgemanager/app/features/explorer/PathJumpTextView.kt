@@ -34,8 +34,9 @@ class PathJumpTextView @JvmOverloads constructor(
 
     private fun showPathEditor() {
         val activity = context as? Activity ?: return
+        val currentPath = text?.toString().orEmpty()
         val input = EditText(context).apply {
-            setText(text@this@PathJumpTextView.text)
+            setText(currentPath)
             setSelection(length())
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_GO
