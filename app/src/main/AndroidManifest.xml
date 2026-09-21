@@ -35,6 +35,7 @@
         <activity android:name=".features.resources.BinaryResourceEditorActivity" android:exported="false" />
         <activity android:name=".features.dex.SmaliStudioActivity" android:exported="false" />
         <activity android:name=".features.terminal.TerminalActivity" android:exported="false" />
+        <activity android:name=".features.system.ActivityRecordActivity" android:exported="false" />
         <activity android:name=".features.viewer.ImageViewerActivity" android:exported="false" />
         <activity android:name=".features.viewer.ImageEditorActivity" android:exported="false" />
         <activity android:name=".features.viewer.DocumentViewerActivity" android:exported="true">
