@@ -28,12 +28,15 @@ class SettingsActivity : ForgeActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), dp(4), dp(12), dp(4))
-            setBackgroundColor(UiPreferences.surface(this@SettingsActivity))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(UiPreferences.accent(this@SettingsActivity), UiPreferences.accentAlt(this@SettingsActivity))
+            )
             addView(textButton("‹") { finish() }, LinearLayout.LayoutParams(dp(48), dp(52)))
             addView(TextView(this@SettingsActivity).apply {
                 text = "Configurações"
                 textSize = 19f
-                setTextColor(UiPreferences.textPrimary(this@SettingsActivity))
+                setTextColor(android.graphics.Color.WHITE)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
@@ -49,11 +52,8 @@ class SettingsActivity : ForgeActivity() {
         setContentView(root)
 
         section("Aparência")
-        toggle("Preto AMOLED", "Usa preto puro. Desativado por padrão para uma paleta escura mais confortável.", UiPreferences.amoled(this)) {
-            UiPreferences.setAmoled(this, it)
-            render()
-        }
-        action("Cor de destaque", accentLabel()) { chooseAccent() }
+        action("Tema do fundo", themeLabel()) { chooseTheme() }
+        action("Cores do app", accentLabel()) { chooseAccent() }
         toggle("Ícones grandes", "Aumenta os ícones de arquivos sem ampliar demais as linhas.", UiPreferences.largeIcons(this)) {
             UiPreferences.setLargeIcons(this, it)
         }
@@ -73,8 +73,8 @@ class SettingsActivity : ForgeActivity() {
         }
 
         section("Ferramentas")
-        info("DEX / Smali", "Inspector, navegação e rebuild continuam ferramentas internas do gerenciador.")
-        info("APK / recursos", "Resource Studio, AXML/ARSC, zipalign e assinatura permanecem integrados.")
+        info("DEX / Smali", "Inspector, navegação, busca, cache e rebuild integrados ao gerenciador.")
+        info("APK / recursos", "Resource Studio, AXML/ARSC, zipalign e assinatura continuam integrados.")
         info("Acesso", "SAF, Shizuku e root continuam opt-in e independentes.")
     }
 
@@ -131,12 +131,27 @@ class SettingsActivity : ForgeActivity() {
         }, rowParams())
     }
 
+    private fun chooseTheme() {
+        val names = arrayOf("Branco", "Cinza", "Preto normal")
+        val values = arrayOf(UiPreferences.THEME_WHITE, UiPreferences.THEME_GRAY, UiPreferences.THEME_DARK)
+        val current = values.indexOf(UiPreferences.themeMode(this)).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Tema do fundo")
+            .setSingleChoiceItems(names, current) { dialog, which ->
+                UiPreferences.setThemeMode(this, values[which])
+                dialog.dismiss()
+                render()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
     private fun chooseAccent() {
-        val names = arrayOf("Azul", "Ciano", "Roxo", "Verde", "Laranja", "Vermelho")
-        val values = arrayOf("blue", "cyan", "purple", "green", "orange", "red")
+        val names = arrayOf("Azul + ciano", "Ciano + azul", "Roxo + rosa", "Verde + turquesa", "Laranja + vermelho", "Vermelho + roxo", "Rosa + violeta")
+        val values = arrayOf("azure", "cyan", "violet", "green", "orange", "red", "pink")
         val current = values.indexOf(UiPreferences.accentName(this)).coerceAtLeast(0)
         AlertDialog.Builder(this)
-            .setTitle("Cor de destaque")
+            .setTitle("Cores do app")
             .setSingleChoiceItems(names, current) { dialog, which ->
                 UiPreferences.setAccent(this, values[which])
                 dialog.dismiss()
@@ -146,13 +161,20 @@ class SettingsActivity : ForgeActivity() {
             .show()
     }
 
+    private fun themeLabel(): String = when (UiPreferences.themeMode(this)) {
+        UiPreferences.THEME_GRAY -> "Cinza"
+        UiPreferences.THEME_DARK -> "Preto normal"
+        else -> "Branco"
+    }
+
     private fun accentLabel(): String = when (UiPreferences.accentName(this)) {
-        "cyan" -> "Ciano"
-        "purple" -> "Roxo"
-        "green" -> "Verde"
-        "orange" -> "Laranja"
-        "red" -> "Vermelho"
-        else -> "Azul"
+        "cyan" -> "Ciano + azul"
+        "violet" -> "Roxo + rosa"
+        "green" -> "Verde + turquesa"
+        "orange" -> "Laranja + vermelho"
+        "red" -> "Vermelho + roxo"
+        "pink" -> "Rosa + violeta"
+        else -> "Azul + ciano"
     }
 
     private fun row() = LinearLayout(this).apply {
@@ -160,6 +182,7 @@ class SettingsActivity : ForgeActivity() {
         background = GradientDrawable().apply {
             cornerRadius = dp(10).toFloat()
             setColor(UiPreferences.elevatedSurface(this@SettingsActivity))
+            setStroke(dp(1), UiPreferences.divider(this@SettingsActivity))
         }
     }
 
@@ -179,7 +202,7 @@ class SettingsActivity : ForgeActivity() {
         text = value
         gravity = Gravity.CENTER
         textSize = 30f
-        setTextColor(UiPreferences.textPrimary(this@SettingsActivity))
+        setTextColor(android.graphics.Color.WHITE)
         setOnClickListener { click() }
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
