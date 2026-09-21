@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <cache-path name="shared_cache" path="shared/" />
+    <!-- Files copied for "Abrir com" and sharing live under the private app cache.
+         FileProvider still grants access only to the exact Uri handed to another app. -->
+    <cache-path name="forge_cache" path="." />
     <external-path name="external_files" path="." />
 </paths>
