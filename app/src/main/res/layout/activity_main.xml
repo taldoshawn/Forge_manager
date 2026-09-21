@@ -21,16 +21,7 @@
             style="@style/TopIconButton"
             android:contentDescription="@string/menu"
             android:src="@drawable/ic_nav_menu"
-            android:tint="#F5F7FA" />
-
-        <ImageView
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="2dp"
-            android:layout_marginEnd="10dp"
-            android:contentDescription="@null"
-            android:scaleType="fitCenter"
-            android:src="@drawable/fm_app_logo_original" />
+            android:tint="#FFFFFF" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -38,16 +29,17 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:orientation="vertical"
-            android:paddingEnd="4dp">
+            android:paddingStart="8dp"
+            android:paddingEnd="6dp">
 
-            <TextView
+            <com.forgemanager.app.features.explorer.PathJumpTextView
                 android:id="@+id/activePath"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:ellipsize="middle"
                 android:maxLines="1"
                 android:text="/storage/emulated/0"
-                android:textColor="@color/fm_accent"
+                android:textColor="#FFFFFF"
                 android:textSize="15sp"
                 android:textStyle="bold" />
 
@@ -58,7 +50,7 @@
                 android:layout_marginTop="2dp"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="@color/fm_top_secondary"
+                android:textColor="#EAF5FF"
                 android:textSize="10.5sp" />
         </LinearLayout>
 
@@ -67,7 +59,7 @@
             style="@style/TopIconButton"
             android:contentDescription="@string/more"
             android:src="@drawable/ic_nav_more"
-            android:tint="#F5F7FA" />
+            android:tint="#FFFFFF" />
     </LinearLayout>
 
     <View
@@ -112,10 +104,10 @@
         android:gravity="center"
         android:orientation="horizontal">
 
-        <ImageButton android:id="@+id/backButton" style="@style/BottomIconButton" android:contentDescription="@string/back" android:src="@drawable/ic_nav_back" android:tint="#D7DBE0" />
-        <ImageButton android:id="@+id/forwardButton" style="@style/BottomIconButton" android:contentDescription="@string/forward" android:src="@drawable/ic_nav_forward" android:tint="#D7DBE0" />
-        <ImageButton android:id="@+id/createButton" style="@style/BottomIconButton" android:contentDescription="@string/create" android:src="@drawable/ic_nav_add" android:tint="@color/fm_accent" />
-        <ImageButton android:id="@+id/syncButton" style="@style/BottomIconButton" android:contentDescription="@string/sync" android:src="@drawable/ic_nav_sync" android:tint="@color/fm_accent_alt" />
-        <ImageButton android:id="@+id/upButton" style="@style/BottomIconButton" android:contentDescription="@string/up" android:src="@drawable/ic_nav_up" android:tint="#D7DBE0" />
+        <ImageButton android:id="@+id/backButton" style="@style/BottomIconButton" android:contentDescription="@string/back" android:src="@drawable/ic_nav_back" />
+        <ImageButton android:id="@+id/forwardButton" style="@style/BottomIconButton" android:contentDescription="@string/forward" android:src="@drawable/ic_nav_forward" />
+        <ImageButton android:id="@+id/createButton" style="@style/BottomIconButton" android:contentDescription="@string/create" android:src="@drawable/ic_nav_add" />
+        <ImageButton android:id="@+id/syncButton" style="@style/BottomIconButton" android:contentDescription="@string/sync" android:src="@drawable/ic_nav_sync" />
+        <ImageButton android:id="@+id/upButton" style="@style/BottomIconButton" android:contentDescription="@string/up" android:src="@drawable/ic_nav_up" />
     </LinearLayout>
 </LinearLayout>
