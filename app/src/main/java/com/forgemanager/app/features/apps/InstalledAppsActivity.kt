@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -13,9 +14,12 @@ import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
-import android.widget.ArrayAdapter
+import android.view.View
+import android.view.ViewGroup
+import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
@@ -41,6 +45,7 @@ class InstalledAppsActivity : ForgeActivity() {
     private lateinit var list: ListView
     private lateinit var status: TextView
     private lateinit var search: EditText
+    private lateinit var appsAdapter: AppsAdapter
     private var apps: List<PackageInfo> = emptyList()
     private var shownApps: List<PackageInfo> = emptyList()
     private var mode: String = MODE_BROWSE
@@ -64,50 +69,56 @@ class InstalledAppsActivity : ForgeActivity() {
         val top = LinearLayout(this@InstalledAppsActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(UiPreferences.surface(this@InstalledAppsActivity))
+            setBackgroundColor(Color.rgb(32, 32, 32))
         }
-        top.addView(button("←") { finish() })
+        top.addView(button("←", forceLight = true) { finish() })
         status = TextView(this@InstalledAppsActivity).apply {
             text = if (mode == MODE_EXTRACT) "Extrair APKs instalados" else "Aplicativos instalados"
-            textSize = 15f
-            maxLines = 2
-            setTextColor(UiPreferences.textPrimary(this@InstalledAppsActivity))
-            setPadding(dp(6), 0, dp(6), 0)
+            textSize = 14f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(Color.WHITE)
+            setPadding(dp(5), 0, dp(5), 0)
         }
         top.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
-        top.addView(button("↓USR") { confirmBulkExtract() })
-        addView(top, LinearLayout.LayoutParams(-1, dp(54)))
+        top.addView(button("↓USR", forceLight = true) { confirmBulkExtract() })
+        addView(top, LinearLayout.LayoutParams(-1, dp(48)))
 
         search = EditText(this@InstalledAppsActivity).apply {
             hint = "Buscar app ou pacote"
             setSingleLine()
-            textSize = 13f
+            textSize = 12.5f
             setTextColor(UiPreferences.textPrimary(this@InstalledAppsActivity))
             setHintTextColor(UiPreferences.textSecondary(this@InstalledAppsActivity))
             setBackgroundColor(UiPreferences.elevatedSurface(this@InstalledAppsActivity))
-            setPadding(dp(12), 0, dp(12), 0)
+            setPadding(dp(10), 0, dp(10), 0)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = filterApps()
                 override fun afterTextChanged(s: Editable?) = Unit
             })
         }
-        addView(search, LinearLayout.LayoutParams(-1, dp(48)))
+        addView(search, LinearLayout.LayoutParams(-1, dp(42)))
 
+        appsAdapter = AppsAdapter()
         list = ListView(this@InstalledAppsActivity).apply {
-            setBackgroundColor(UiPreferences.background(this@InstalledAppsActivity))
+            setBackgroundColor(UiPreferences.surface(this@InstalledAppsActivity))
+            divider = null
             dividerHeight = 0
+            adapter = appsAdapter
             setOnItemClickListener { _, _, position, _ -> shownApps.getOrNull(position)?.let(::showActions) }
         }
         addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
-    private fun button(label: String, action: () -> Unit) = Button(this).apply {
+    private fun button(label: String, forceLight: Boolean = false, action: () -> Unit) = Button(this).apply {
         text = label
         textSize = if (label.length > 2) 9f else 16f
-        setTextColor(UiPreferences.textPrimary(this@InstalledAppsActivity))
-        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-        minWidth = dp(48)
+        setTextColor(if (forceLight) Color.WHITE else UiPreferences.textPrimary(this@InstalledAppsActivity))
+        setBackgroundColor(Color.TRANSPARENT)
+        minWidth = dp(42)
+        minHeight = dp(40)
+        setPadding(dp(6), 0, dp(6), 0)
         setOnClickListener { action() }
     }
 
@@ -134,19 +145,80 @@ class InstalledAppsActivity : ForgeActivity() {
             val label = runCatching { packageManager.getApplicationLabel(info.applicationInfo!!).toString() }.getOrDefault("")
             label.contains(query, true) || info.packageName.contains(query, true)
         }
-        list.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_list_item_2,
-            android.R.id.text1,
-            shownApps.map { info ->
-                val label = packageManager.getApplicationLabel(info.applicationInfo!!)
-                val system = info.applicationInfo!!.flags and ApplicationInfo.FLAG_SYSTEM != 0
-                val splitCount = info.applicationInfo!!.splitSourceDirs?.size ?: 0
-                "$label\n${info.packageName}  ${info.versionName ?: ""}  •  ${if (system) "sistema" else "usuário"}${if (splitCount > 0) "  •  ${splitCount + 1} APKs" else ""}"
-            }
-        )
+        appsAdapter.notifyDataSetChanged()
         status.text = if (mode == MODE_EXTRACT) "Extrair APKs • ${shownApps.size} apps" else "Aplicativos • ${shownApps.size}"
     }
+
+    private inner class AppsAdapter : BaseAdapter() {
+        override fun getCount(): Int = shownApps.size
+        override fun getItem(position: Int): PackageInfo = shownApps[position]
+        override fun getItemId(position: Int): Long = shownApps[position].packageName.hashCode().toLong()
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val holder: AppRowHolder
+            val row = if (convertView == null) {
+                LinearLayout(this@InstalledAppsActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(8), dp(4), dp(8), dp(4))
+                    setBackgroundColor(UiPreferences.surface(this@InstalledAppsActivity))
+
+                    val icon = ImageView(this@InstalledAppsActivity).apply {
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                    }
+                    addView(icon, LinearLayout.LayoutParams(dp(34), dp(34)))
+
+                    val texts = LinearLayout(this@InstalledAppsActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(8), 0, 0, 0)
+                    }
+                    val title = TextView(this@InstalledAppsActivity).apply {
+                        textSize = 12.5f
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        setTextColor(UiPreferences.textPrimary(this@InstalledAppsActivity))
+                    }
+                    val subtitle = TextView(this@InstalledAppsActivity).apply {
+                        textSize = 9.5f
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        setTextColor(UiPreferences.textSecondary(this@InstalledAppsActivity))
+                    }
+                    texts.addView(title, LinearLayout.LayoutParams(-1, -2))
+                    texts.addView(subtitle, LinearLayout.LayoutParams(-1, -2))
+                    addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+                    holder = AppRowHolder(icon, title, subtitle)
+                    tag = holder
+                }
+            } else {
+                holder = convertView.tag as AppRowHolder
+                convertView
+            }
+
+            row.layoutParams = (row.layoutParams ?: android.widget.AbsListView.LayoutParams(-1, dp(52))).apply {
+                height = dp(52)
+            }
+            row.setBackgroundColor(UiPreferences.surface(this@InstalledAppsActivity))
+            val info = getItem(position)
+            val appInfo = info.applicationInfo
+            val label = runCatching { packageManager.getApplicationLabel(appInfo!!).toString() }.getOrDefault(info.packageName)
+            val system = (appInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0
+            val splitCount = appInfo?.splitSourceDirs?.size ?: 0
+            holder.title.text = label
+            holder.title.setTextColor(UiPreferences.textPrimary(this@InstalledAppsActivity))
+            holder.subtitle.text = buildString {
+                append(info.packageName)
+                if (!info.versionName.isNullOrBlank()) append("  ").append(info.versionName)
+                append("  •  ").append(if (system) "sistema" else "usuário")
+                if (splitCount > 0) append("  •  ").append(splitCount + 1).append(" APKs")
+            }
+            holder.subtitle.setTextColor(UiPreferences.textSecondary(this@InstalledAppsActivity))
+            holder.icon.setImageDrawable(runCatching { packageManager.getApplicationIcon(appInfo!!) }.getOrNull())
+            return row
+        }
+    }
+
+    private data class AppRowHolder(val icon: ImageView, val title: TextView, val subtitle: TextView)
 
     private fun showActions(info: PackageInfo) {
         val appInfo = info.applicationInfo ?: return
@@ -179,6 +251,7 @@ class InstalledAppsActivity : ForgeActivity() {
     }
 
     private fun extractToDownloads(info: PackageInfo, baseOnly: Boolean) {
+        if (!ensureExtractionAccess()) return
         status.text = "Extraindo ${info.packageName}…"
         scope.launch {
             val result = runCatching { withContext(Dispatchers.IO) { extractPackage(info, baseOnly) } }
@@ -197,7 +270,18 @@ class InstalledAppsActivity : ForgeActivity() {
         }
     }
 
+    private fun ensureExtractionAccess(): Boolean {
+        if (Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()) return true
+        toast("Autorize 'Acesso a todos os arquivos' para salvar APKs em Download")
+        val appUri = Uri.parse("package:$packageName")
+        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, appUri)
+        runCatching { startActivity(intent) }
+            .recoverCatching { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+        return false
+    }
+
     private fun confirmBulkExtract() {
+        if (!ensureExtractionAccess()) return
         val userApps = apps.filter { info ->
             val flags = info.applicationInfo?.flags ?: 0
             flags and ApplicationInfo.FLAG_SYSTEM == 0
