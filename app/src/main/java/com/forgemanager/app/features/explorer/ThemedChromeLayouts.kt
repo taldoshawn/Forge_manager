@@ -3,14 +3,13 @@ package com.forgemanager.app.features.explorer
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.forgemanager.app.features.settings.UiPreferences
 
-/** Keeps the main toolbar colorful even when MainActivity reapplies a surface tint. */
+/** Main explorer chrome: compact MT-style neutral dark header on every theme. */
 class ThemedTopBarLayout @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
@@ -37,14 +36,11 @@ class ThemedTopBarLayout @JvmOverloads constructor(
 
     private fun applyForgeBackground() {
         super.setBackgroundTintList(null)
-        background = GradientDrawable(
-            GradientDrawable.Orientation.LEFT_RIGHT,
-            intArrayOf(UiPreferences.accentAlt(context), UiPreferences.accent(context))
-        )
+        setBackgroundColor(Color.rgb(32, 32, 32))
     }
 }
 
-/** Keeps the secondary toolbar line readable over the colorful gradient. */
+/** Secondary line remains readable on the permanent dark header. */
 class ThemedTopInfoTextView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
@@ -53,17 +49,17 @@ class ThemedTopInfoTextView @JvmOverloads constructor(
 
     init {
         ready = true
-        super.setTextColor(Color.argb(230, 255, 255, 255))
+        super.setTextColor(Color.rgb(190, 196, 205))
     }
 
     override fun setTextColor(color: Int) {
         if (!ready) super.setTextColor(color)
-        else super.setTextColor(Color.argb(230, 255, 255, 255))
+        else super.setTextColor(Color.rgb(190, 196, 205))
     }
 
     override fun setTextColor(colors: ColorStateList?) {
         if (!ready) super.setTextColor(colors)
-        else super.setTextColor(ColorStateList.valueOf(Color.argb(230, 255, 255, 255)))
+        else super.setTextColor(ColorStateList.valueOf(Color.rgb(190, 196, 205)))
     }
 }
 
@@ -78,12 +74,7 @@ class ThemedDividerView @JvmOverloads constructor(
     }
 }
 
-/**
- * MainActivity historically darkened the active pane header by multiplying the
- * accent by 0.22. That is fine on a dark theme but produces a nearly black block
- * inside the new light themes. This layout remaps only that very dark active
- * tint to a pale accent surface while keeping the existing controller logic.
- */
+/** Keeps pane headers readable in white/gray/dark themes without giant dark blocks. */
 class ThemedPaneHeaderLayout @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
@@ -101,7 +92,7 @@ class ThemedPaneHeaderLayout @JvmOverloads constructor(
         }
         val requested = tint?.defaultColor ?: UiPreferences.elevatedSurface(context)
         val color = if (UiPreferences.isLight(context) && luminance(requested) < 95) {
-            blend(UiPreferences.surface(context), UiPreferences.accent(context), 0.13f)
+            blend(UiPreferences.surface(context), UiPreferences.accent(context), 0.10f)
         } else requested
         super.setBackgroundTintList(ColorStateList.valueOf(color))
     }
