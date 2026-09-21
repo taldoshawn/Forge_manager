@@ -7,7 +7,6 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -114,7 +113,7 @@ class ImageEditorActivity : ForgeActivity() {
         }
     }
 
-    private fun decodeEditableBitmap(): Bitmap {
+    private suspend fun decodeEditableBitmap(): Bitmap {
         val backend = graph.resolver.backendFor(location)
         val node = backend.stat(location)
         require(node.size in 1..MAX_FILE_BYTES) { "Imagem vazia ou grande demais para edição" }
@@ -185,7 +184,7 @@ class ImageEditorActivity : ForgeActivity() {
         }
     }
 
-    private fun writeToLocation(bitmap: Bitmap) {
+    private suspend fun writeToLocation(bitmap: Bitmap) {
         val backend = graph.resolver.backendFor(location, write = true)
         backend.openOutput(location, truncate = true).use { output ->
             require(bitmap.compress(formatFor(name), 95, output)) { "Falha ao codificar imagem" }
@@ -212,10 +211,11 @@ class ImageEditorActivity : ForgeActivity() {
         return candidate.name
     }
 
+    @Suppress("DEPRECATION")
     private fun formatFor(fileName: String): Bitmap.CompressFormat {
         return when (fileName.substringAfterLast('.', "").lowercase()) {
             "jpg", "jpeg" -> Bitmap.CompressFormat.JPEG
-            "webp" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSLESS else @Suppress("DEPRECATION") Bitmap.CompressFormat.WEBP
+            "webp" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSLESS else Bitmap.CompressFormat.WEBP
             else -> Bitmap.CompressFormat.PNG
         }
     }
