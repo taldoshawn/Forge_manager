@@ -39,11 +39,8 @@ class ForgeBrowserActivity : ForgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildUi())
-        if (savedInstanceState == null) {
-            load(intent.getStringExtra(EXTRA_URL) ?: DEFAULT_HOME)
-        } else {
-            web.restoreState(savedInstanceState)
-        }
+        if (savedInstanceState == null) load(intent.getStringExtra(EXTRA_URL) ?: DEFAULT_HOME)
+        else web.restoreState(savedInstanceState)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -61,20 +58,13 @@ class ForgeBrowserActivity : ForgeActivity() {
         if (requestCode != REQ_DOWNLOAD_STORAGE) return
         val spec = pendingDownload
         pendingDownload = null
-        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED && spec != null) {
-            enqueueDownload(spec)
-        } else {
-            toast("Permissão de armazenamento negada")
-        }
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED && spec != null) enqueueDownload(spec)
+        else toast("Permissão de armazenamento negada")
     }
 
     override fun onDestroy() {
         if (::web.isInitialized) {
-            web.stopLoading()
-            web.loadUrl("about:blank")
-            web.clearHistory()
-            web.removeAllViews()
-            web.destroy()
+            web.stopLoading(); web.loadUrl("about:blank"); web.clearHistory(); web.removeAllViews(); web.destroy()
         }
         super.onDestroy()
     }
@@ -102,6 +92,7 @@ class ForgeBrowserActivity : ForgeActivity() {
             setOnEditorActionListener { _, _, _ -> load(text.toString()); true }
         }
         bar.addView(address, LinearLayout.LayoutParams(0, -2, 1f))
+        bar.addView(button("⇩") { downloadCurrentUrl() }.apply { contentDescription = "Baixar URL atual" })
         bar.addView(button("⋮") { showMenu() })
         addView(bar, LinearLayout.LayoutParams(-1, dp(54)))
 
@@ -112,10 +103,8 @@ class ForgeBrowserActivity : ForgeActivity() {
                 domStorageEnabled = true
                 allowFileAccess = false
                 allowContentAccess = false
-                @Suppress("DEPRECATION")
-                allowFileAccessFromFileURLs = false
-                @Suppress("DEPRECATION")
-                allowUniversalAccessFromFileURLs = false
+                @Suppress("DEPRECATION") allowFileAccessFromFileURLs = false
+                @Suppress("DEPRECATION") allowUniversalAccessFromFileURLs = false
                 mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 javaScriptCanOpenWindowsAutomatically = false
                 setSupportMultipleWindows(false)
@@ -131,18 +120,12 @@ class ForgeBrowserActivity : ForgeActivity() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val uri = request?.url ?: return true
                     return if (isAllowedWebUri(uri)) false else {
-                        toast("Esquema bloqueado no navegador interno")
-                        true
+                        toast("Esquema bloqueado no navegador interno"); true
                     }
                 }
-
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    address.setText(url.orEmpty())
-                }
-
+                override fun onPageFinished(view: WebView?, url: String?) { address.setText(url.orEmpty()) }
                 override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                    handler?.cancel()
-                    toast("Certificado HTTPS inválido — conexão bloqueada", long = true)
+                    handler?.cancel(); toast("Certificado HTTPS inválido — conexão bloqueada", long = true)
                 }
             }
             setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
@@ -154,16 +137,15 @@ class ForgeBrowserActivity : ForgeActivity() {
 
     private fun button(label: String, action: () -> Unit) = Button(this).apply {
         text = label
+        minWidth = dp(40)
+        minimumWidth = dp(40)
         setTextColor(UiPreferences.textPrimary(this@ForgeBrowserActivity))
         setBackgroundColor(Color.TRANSPARENT)
         setOnClickListener { action() }
     }
 
     private fun load(raw: String) {
-        val normalized = normalizeTypedUrl(raw) ?: run {
-            toast("URL inválida. Use HTTP ou HTTPS.")
-            return
-        }
+        val normalized = normalizeTypedUrl(raw) ?: run { toast("URL inválida. Use HTTP ou HTTPS."); return }
         web.loadUrl(normalized)
     }
 
@@ -180,19 +162,16 @@ class ForgeBrowserActivity : ForgeActivity() {
     private fun isAllowedWebUri(uri: Uri): Boolean =
         uri.scheme?.lowercase() in setOf("http", "https") && !uri.host.isNullOrBlank()
 
-    private fun requestDownload(
-        url: String?,
-        userAgent: String?,
-        contentDisposition: String?,
-        mimeType: String?,
-        contentLength: Long
-    ) {
+    private fun downloadCurrentUrl() {
+        val url = web.url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            ?: run { toast("Nenhuma URL HTTP/HTTPS para baixar"); return }
+        requestDownload(url, web.settings.userAgentString, null, null, -1L)
+    }
+
+    private fun requestDownload(url: String?, userAgent: String?, contentDisposition: String?, mimeType: String?, contentLength: Long) {
         val raw = url ?: return
         val uri = runCatching { Uri.parse(raw) }.getOrNull()
-        if (uri == null || !isAllowedWebUri(uri)) {
-            toast("Download bloqueado: URL inválida")
-            return
-        }
+        if (uri == null || !isAllowedWebUri(uri)) { toast("Download bloqueado: URL inválida"); return }
         val guessed = URLUtil.guessFileName(raw, contentDisposition, mimeType)
         val safeName = sanitizeDownloadName(guessed)
         val spec = DownloadSpec(raw, userAgent, mimeType?.takeIf { it.isNotBlank() } ?: "application/octet-stream", safeName)
@@ -200,7 +179,7 @@ class ForgeBrowserActivity : ForgeActivity() {
         AlertDialog.Builder(this)
             .setTitle("Baixar arquivo?")
             .setMessage("$safeName$size\nDestino: /storage/emulated/0/Download")
-            .setPositiveButton("Baixar") { _, _ -> prepareDownload(spec) }
+            .setPositiveButton("BAIXAR") { _, _ -> prepareDownload(spec) }
             .setNegativeButton("Cancelar", null)
             .show()
     }
@@ -226,65 +205,41 @@ class ForgeBrowserActivity : ForgeActivity() {
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, spec.fileName)
             spec.userAgent?.takeIf { it.isNotBlank() }?.let { request.addRequestHeader("User-Agent", it) }
-            CookieManager.getInstance().getCookie(spec.url)?.takeIf { it.isNotBlank() }?.let {
-                request.addRequestHeader("Cookie", it)
-            }
+            CookieManager.getInstance().getCookie(spec.url)?.takeIf { it.isNotBlank() }?.let { request.addRequestHeader("Cookie", it) }
             getSystemService(DownloadManager::class.java).enqueue(request)
-        }.onSuccess {
-            toast("Download iniciado: ${spec.fileName}", long = true)
-        }.onFailure {
-            toast("Não foi possível iniciar o download: ${it.message ?: "erro"}", long = true)
-        }
+        }.onSuccess { toast("Download iniciado: ${spec.fileName}", long = true) }
+            .onFailure { toast("Não foi possível iniciar o download: ${it.message ?: "erro"}", long = true) }
     }
 
     private fun sanitizeDownloadName(value: String): String {
-        val cleaned = value
-            .replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_")
-            .trim()
-            .trim('.')
-            .take(180)
+        val cleaned = value.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").trim().trim('.').take(180)
         return cleaned.ifBlank { "download-${System.currentTimeMillis()}" }
     }
 
     private fun showMenu() {
-        val items = arrayOf(
-            "Compartilhar",
-            "Copiar URL",
-            "Localizar na página",
-            "Downloads",
-            "Modo ${if (desktop) "mobile" else "desktop"}",
-            "Abrir externamente"
-        )
+        val items = arrayOf("Baixar URL atual", "Compartilhar", "Copiar URL", "Localizar na página", "Downloads", "Modo ${if (desktop) "mobile" else "desktop"}", "Abrir externamente")
         AlertDialog.Builder(this).setTitle("Forge Web").setItems(items) { _, which ->
             when (which) {
-                0 -> web.url?.let { url ->
-                    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url), "Compartilhar"))
+                0 -> downloadCurrentUrl()
+                1 -> web.url?.let { url -> startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url), "Compartilhar")) }
+                2 -> web.url?.let { url ->
+                    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("URL", url)); toast("URL copiada")
                 }
-                1 -> web.url?.let { url ->
-                    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("URL", url))
-                    toast("URL copiada")
-                }
-                2 -> {
+                3 -> {
                     val input = EditText(this)
                     AlertDialog.Builder(this).setTitle("Localizar").setView(input)
                         .setPositiveButton("Buscar") { _, _ -> web.findAllAsync(input.text.toString()) }
                         .setNegativeButton("Cancelar", null).show()
                 }
-                3 -> runCatching { startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)) }
-                    .onFailure { toast("Tela de downloads indisponível") }
-                4 -> {
+                4 -> runCatching { startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)) }.onFailure { toast("Tela de downloads indisponível") }
+                5 -> {
                     desktop = !desktop
-                    web.settings.userAgentString = if (desktop) {
-                        WebSettings.getDefaultUserAgent(this).replace("Mobile", "Desktop").replace("Android", "X11; Linux x86_64")
-                    } else WebSettings.getDefaultUserAgent(this)
+                    web.settings.userAgentString = if (desktop) WebSettings.getDefaultUserAgent(this).replace("Mobile", "Desktop").replace("Android", "X11; Linux x86_64") else WebSettings.getDefaultUserAgent(this)
                     web.reload()
                 }
-                5 -> web.url?.let { raw ->
+                6 -> web.url?.let { raw ->
                     val uri = runCatching { Uri.parse(raw) }.getOrNull()
-                    if (uri != null && isAllowedWebUri(uri)) {
-                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-                            .onFailure { toast("Nenhum aplicativo compatível") }
-                    }
+                    if (uri != null && isAllowedWebUri(uri)) runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }.onFailure { toast("Nenhum aplicativo compatível") }
                 }
             }
         }.show()
@@ -293,26 +248,14 @@ class ForgeBrowserActivity : ForgeActivity() {
     private fun formatBytes(value: Long): String {
         if (value < 1024) return "$value B"
         val units = arrayOf("KB", "MB", "GB", "TB")
-        var size = value.toDouble()
-        var index = -1
-        do {
-            size /= 1024.0
-            index++
-        } while (size >= 1024 && index < units.lastIndex)
+        var size = value.toDouble(); var index = -1
+        do { size /= 1024.0; index++ } while (size >= 1024 && index < units.lastIndex)
         return String.format(Locale.US, "%.1f %s", size, units[index])
     }
 
-    private fun toast(message: String, long: Boolean = false) =
-        Toast.makeText(this, message, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
-
+    private fun toast(message: String, long: Boolean = false) = Toast.makeText(this, message, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-
-    private data class DownloadSpec(
-        val url: String,
-        val userAgent: String?,
-        val mimeType: String,
-        val fileName: String
-    )
+    private data class DownloadSpec(val url: String, val userAgent: String?, val mimeType: String, val fileName: String)
 
     companion object {
         const val EXTRA_URL = "url"
