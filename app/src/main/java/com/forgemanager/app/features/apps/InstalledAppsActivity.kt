@@ -247,7 +247,7 @@ class InstalledAppsActivity : ForgeActivity() {
         val destination = downloadsDirectory().apply {
             if (!exists() && !mkdirs()) error("Não foi possível criar ${path}")
         }
-        val version = sanitize(info.versionName ?: info.longVersionCode.toString())
+        val version = sanitize(info.versionName ?: "unknown")
         val stem = sanitize("${info.packageName}-$version")
 
         if (baseOnly || splits.isEmpty()) {
@@ -274,7 +274,7 @@ class InstalledAppsActivity : ForgeActivity() {
                 val appInfo = info.applicationInfo ?: error("ApplicationInfo indisponível")
                 val base = appInfo.sourceDir?.let(::File)?.takeIf { it.isFile } ?: error("base.apk não encontrado")
                 val splits = appInfo.splitSourceDirs.orEmpty().map(::File).filter { it.isFile }
-                val stem = sanitize("${info.packageName}-${info.versionName ?: info.longVersionCode}")
+                val stem = sanitize("${info.packageName}-${info.versionName ?: "unknown"}")
                 if (splits.isEmpty()) {
                     File(dir, "$stem.apk").also { copyFile(base, it) }
                 } else {
