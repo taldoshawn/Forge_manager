@@ -36,6 +36,7 @@
         <activity android:name=".features.dex.SmaliStudioActivity" android:exported="false" />
         <activity android:name=".features.terminal.TerminalActivity" android:exported="false" />
         <activity android:name=".features.viewer.ImageViewerActivity" android:exported="false" />
+        <activity android:name=".features.viewer.ImageEditorActivity" android:exported="false" />
         <activity android:name=".features.editor.HtmlPreviewActivity" android:exported="false" />
         <activity android:name=".features.apps.InstalledAppsActivity" android:exported="false" />
         <activity android:name=".features.apk.ApkInspectorActivity" android:exported="false" />
