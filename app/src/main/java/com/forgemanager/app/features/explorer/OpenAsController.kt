@@ -6,6 +6,7 @@ import android.content.Intent
 import com.forgemanager.app.core.file.FileLocation
 import com.forgemanager.app.core.file.FileNode
 import com.forgemanager.app.core.file.putFileLocation
+import com.forgemanager.app.features.apktools.ApkToolboxActivity
 import com.forgemanager.app.features.dex.DexInspectorActivity
 import com.forgemanager.app.features.dex.SmaliStudioActivity
 import com.forgemanager.app.features.editor.EditorLanguage
@@ -14,6 +15,7 @@ import com.forgemanager.app.features.editor.HexViewerActivity
 import com.forgemanager.app.features.editor.HtmlPreviewActivity
 import com.forgemanager.app.features.editor.TextEditorActivity
 import com.forgemanager.app.features.resources.BinaryResourceEditorActivity
+import com.forgemanager.app.features.viewer.DocumentViewerActivity
 import com.forgemanager.app.features.viewer.ImageViewerActivity
 
 /** Explicit, non-executing "Open as…" router for the active file. */
@@ -27,8 +29,11 @@ object OpenAsController {
     ) {
         if (node.isDirectory) return
         val actions = mutableListOf<Action>()
-        actions += Action("Texto") { openText(activity, node, EditorLanguage.PLAIN) }
-        actions += Action("Código…") { chooseCodeLanguage(activity, node) }
+        actions += Action("Texto / código") { openText(activity, node, EditorLanguage.PLAIN) }
+        actions += Action("Código com perfil…") { chooseCodeLanguage(activity, node) }
+        actions += Action("Documento / PDF") {
+            activity.startActivity(Intent(activity, DocumentViewerActivity::class.java).putFileLocation(node.location, node.name))
+        }
         actions += Action("Hexadecimal") {
             activity.startActivity(Intent(activity, HexViewerActivity::class.java).putFileLocation(node.location, node.name))
         }
@@ -42,11 +47,17 @@ object OpenAsController {
                 activity.startActivity(Intent(activity, HtmlPreviewActivity::class.java).putFileLocation(node.location, node.name))
             } else openText(activity, node, EditorLanguage.MARKDOWN)
         }
-        actions += Action("AXML / ARSC binário") {
+        actions += Action("AXML / ARSC — Pool/XML") {
             activity.startActivity(Intent(activity, BinaryResourceEditorActivity::class.java).putFileLocation(node.location, node.name))
         }
         actions += Action("DEX / Smali") { openDex(activity, node) }
+
         val direct = node.location as? FileLocation.Direct
+        if (direct != null && FileTypeClassifier.extensionOf(node.name) in setOf("apk", "xapk", "apkm", "apks", "aab", "zip")) {
+            actions += Action("APK Toolbox — extrair/recompilar/converter") {
+                activity.startActivity(Intent(activity, ApkToolboxActivity::class.java).putExtra(ApkToolboxActivity.EXTRA_APK_PATH, direct.path))
+            }
+        }
         if (direct != null && navigateArchive != null) {
             actions += Action("Arquivo compactado") { navigateArchive(FileLocation.Archive(direct.path)) }
         }
@@ -60,22 +71,13 @@ object OpenAsController {
             .show()
     }
 
-    /**
-     * TextEditorActivity selects its profile from the supplied display name while
-     * continuing to save to the original FileLocation. Appending an explicit
-     * synthetic extension therefore changes only the editor profile, never the
-     * path being written.
-     */
     private fun openText(activity: Activity, node: FileNode, language: EditorLanguage) {
         val profileName = if (language == EditorLanguage.PLAIN) {
             node.name
         } else {
             "${node.name} [como ${languageLabel(language)}].${EditorProfile.extensionFor(language)}"
         }
-        activity.startActivity(
-            Intent(activity, TextEditorActivity::class.java)
-                .putFileLocation(node.location, profileName)
-        )
+        activity.startActivity(Intent(activity, TextEditorActivity::class.java).putFileLocation(node.location, profileName))
     }
 
     private fun chooseCodeLanguage(activity: Activity, node: FileNode) {
@@ -104,7 +106,7 @@ object OpenAsController {
         }
         AlertDialog.Builder(activity)
             .setTitle("DEX — ${node.name}")
-            .setItems(arrayOf("Smali / rebuild", "Explorer / search")) { _, which ->
+            .setItems(arrayOf("Smali / rebuild", "DEX Editor Plus / multi-DEX")) { _, which ->
                 when (which) {
                     0 -> activity.startActivity(Intent(activity, SmaliStudioActivity::class.java).putFileLocation(node.location, node.name))
                     1 -> activity.startActivity(Intent(activity, DexInspectorActivity::class.java).putExtra("path", direct.path))
