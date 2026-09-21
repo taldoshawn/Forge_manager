@@ -1,11 +1,9 @@
 package com.forgemanager.app.features.disk
 
-import com.forgemanager.app.core.ui.ForgeActivity
-
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.widget.Button
@@ -17,8 +15,12 @@ import com.forgemanager.app.ForgeApplication
 import com.forgemanager.app.MainActivity
 import com.forgemanager.app.core.file.FileLocation
 import com.forgemanager.app.core.file.fileDisplayName
+import com.forgemanager.app.core.file.putFileLocation
 import com.forgemanager.app.core.file.readFileLocation
 import com.forgemanager.app.core.shell.ShellEscaper
+import com.forgemanager.app.core.ui.ForgeActivity
+import com.forgemanager.app.features.editor.HexViewerActivity
+import com.forgemanager.app.features.settings.UiPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,12 +42,8 @@ class DiskImageActivity : ForgeActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        location = intent.readFileLocation() ?: run {
-            finish()
-            return
-        }
-        name = intent.fileDisplayName()
-            ?: location.displayPath.substringAfterLast('/').ifBlank { "disk.img" }
+        location = intent.readFileLocation() ?: run { finish(); return }
+        name = intent.fileDisplayName() ?: location.displayPath.substringAfterLast('/').ifBlank { "disk.img" }
         setContentView(buildUi())
         inspect()
     }
@@ -57,47 +55,53 @@ class DiskImageActivity : ForgeActivity() {
 
     private fun buildUi() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setBackgroundColor(Color.BLACK)
+        setBackgroundColor(UiPreferences.background(this@DiskImageActivity))
 
         val bar = LinearLayout(this@DiskImageActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.BLACK)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(UiPreferences.accent(this@DiskImageActivity), UiPreferences.accentAlt(this@DiskImageActivity))
+            )
         }
-        bar.addView(button("←") { finish() })
-        bar.addView(
-            TextView(this@DiskImageActivity).apply {
-                text = name
-                setTextColor(Color.WHITE)
-                setPadding(dp(8), 0, 0, 0)
-            },
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        )
-        bar.addView(button("MONTAR RO") { mountReadOnly() })
+        bar.addView(button("←", true) { finish() })
+        bar.addView(TextView(this@DiskImageActivity).apply {
+            text = name
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            maxLines = 1
+            setPadding(dp(8), 0, dp(4), 0)
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        bar.addView(button("HEX", true) { openHex() })
+        bar.addView(button("MONTAR RO", true) { mountReadOnly() })
         addView(bar, LinearLayout.LayoutParams(-1, dp(54)))
 
         info = TextView(this@DiskImageActivity).apply {
-            setTextColor(Color.rgb(220, 226, 235))
+            setTextColor(UiPreferences.textPrimary(this@DiskImageActivity))
             typeface = android.graphics.Typeface.MONOSPACE
             textSize = 12f
             setTextIsSelectable(true)
             setPadding(dp(12), dp(12), dp(12), dp(24))
+            setBackgroundColor(UiPreferences.background(this@DiskImageActivity))
         }
-        addView(
-            ScrollView(this@DiskImageActivity).apply { addView(info) },
-            LinearLayout.LayoutParams(-1, 0, 1f)
-        )
+        addView(ScrollView(this@DiskImageActivity).apply { addView(info) }, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
-    private fun button(label: String, action: () -> Unit) = Button(this).apply {
+    private fun button(label: String, white: Boolean = false, action: () -> Unit) = Button(this).apply {
         text = label
-        textSize = 11f
-        setTextColor(Color.WHITE)
+        textSize = if (label.length > 3) 8.5f else 11f
+        setTextColor(if (white) Color.WHITE else UiPreferences.textPrimary(this@DiskImageActivity))
         setBackgroundColor(Color.TRANSPARENT)
         setOnClickListener { action() }
     }
 
+    private fun openHex() {
+        startActivity(Intent(this, HexViewerActivity::class.java).putFileLocation(location, name))
+    }
+
     private fun inspect() {
+        info.text = "Analisando imagem de disco…"
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -106,7 +110,7 @@ class DiskImageActivity : ForgeActivity() {
                     val head = ByteArrayOutputStream()
                     backend.openInput(location).use { input ->
                         val buffer = ByteArray(4096)
-                        var remaining = 64 * 1024
+                        var remaining = 96 * 1024
                         while (remaining > 0) {
                             val count = input.read(buffer, 0, minOf(buffer.size, remaining))
                             if (count < 0) break
@@ -119,8 +123,12 @@ class DiskImageActivity : ForgeActivity() {
             }.onSuccess { (size, data) ->
                 info.text = buildString {
                     append("Arquivo: ").append(name).append('\n')
-                    append("Tamanho: ").append(size).append(" bytes\n")
-                    append("Formato provável: ").append(detect(data)).append("\n\n")
+                    append("Caminho: ").append(location.displayPath).append('\n')
+                    append("Tamanho: ").append(formatSize(size)).append(" ( ").append(size).append(" bytes )\n")
+                    append("Formato provável: ").append(detect(data)).append("\n")
+                    append("Abertura: leitura segura; HEX disponível sem root.\n")
+                    append("Montagem: somente leitura e somente com root.\n\n")
+                    append("Cabeçalho\n──────────\n")
                     append(hex(data.copyOfRange(0, minOf(512, data.size))))
                 }
             }.onFailure { showError(it.message ?: "Falha ao ler imagem") }
@@ -128,20 +136,8 @@ class DiskImageActivity : ForgeActivity() {
     }
 
     private fun detect(data: ByteArray): String {
-        fun ascii(offset: Int, length: Int): String =
-            if (offset >= 0 && offset + length <= data.size) {
-                String(data, offset, length, StandardCharsets.US_ASCII)
-            } else {
-                ""
-            }
-
-        val extMagic = if (data.size > 1081) {
-            (data[1080].toInt() and 0xff) or
-                ((data[1081].toInt() and 0xff) shl 8)
-        } else {
-            -1
-        }
-
+        fun ascii(offset: Int, length: Int): String = if (offset >= 0 && offset + length <= data.size) String(data, offset, length, StandardCharsets.US_ASCII) else ""
+        val extMagic = if (data.size > 1081) (data[1080].toInt() and 0xff) or ((data[1081].toInt() and 0xff) shl 8) else -1
         return when {
             data.size >= 4 && le32(data, 0).toUInt() == 0xED26FF3Au -> "Android sparse image"
             ascii(0, 8) == "ANDROID!" -> "Android boot image"
@@ -156,30 +152,14 @@ class DiskImageActivity : ForgeActivity() {
 
     private fun mountReadOnly() {
         val direct = (location as? FileLocation.Direct)?.path?.let(::File)
-        if (direct == null) {
-            toast("Montagem exige arquivo local direto")
-            return
-        }
-
+        if (direct == null) { toast("Montagem exige arquivo local direto"); return }
         scope.launch {
-            val authorized = if (graph.root.isAuthorized()) {
-                true
-            } else {
-                withContext(Dispatchers.IO) {
-                    runCatching { graph.root.authorize() }.getOrDefault(false)
-                }
-            }
-            if (!authorized) {
-                toast("Root necessário para montar .img")
-                return@launch
-            }
-
+            val authorized = if (graph.root.isAuthorized()) true else withContext(Dispatchers.IO) { runCatching { graph.root.authorize() }.getOrDefault(false) }
+            if (!authorized) { toast("Root necessário para montar .img"); return@launch }
+            if (!canTouchUi()) return@launch
             AlertDialog.Builder(this@DiskImageActivity)
                 .setTitle("Montar somente leitura?")
-                .setMessage(
-                    "O Forge usará loop mount com -o ro. Imagens sparse do Android são " +
-                        "identificadas, mas não são convertidas automaticamente."
-                )
+                .setMessage("O Forge usará loop mount com -o ro. Imagens sparse do Android são identificadas, mas não são convertidas automaticamente.")
                 .setPositiveButton("Montar RO") { _, _ -> doMount(direct) }
                 .setNegativeButton("Cancelar", null)
                 .show()
@@ -191,47 +171,43 @@ class DiskImageActivity : ForgeActivity() {
             runCatching {
                 withContext(Dispatchers.IO) {
                     val point = File("/data/local/tmp/forge-img-${System.nanoTime()}")
-                    val command =
-                        "mkdir -p ${ShellEscaper.quote(point.path)} && " +
-                            "mount -o ro,loop ${ShellEscaper.quote(file.path)} ${ShellEscaper.quote(point.path)}"
-                    val process = ProcessBuilder("su", "-c", command)
-                        .redirectErrorStream(true)
-                        .start()
+                    val command = "mkdir -p ${ShellEscaper.quote(point.path)} && mount -o ro,loop ${ShellEscaper.quote(file.path)} ${ShellEscaper.quote(point.path)}"
+                    val process = ProcessBuilder("su", "-c", command).redirectErrorStream(true).start()
                     val text = process.inputStream.bufferedReader().readText()
                     if (process.waitFor() != 0) error(text.ifBlank { "mount falhou" })
                     point
                 }
             }.onSuccess { point ->
+                if (!canTouchUi()) return@onSuccess
                 mountPoint = point
                 toast("Montado somente leitura")
-                startActivity(
-                    Intent(this@DiskImageActivity, MainActivity::class.java)
-                        .putExtra(MainActivity.EXTRA_OPEN_PATH, point.path)
-                )
+                startActivity(Intent(this@DiskImageActivity, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN_PATH, point.path))
             }.onFailure { showError(it.message ?: "Falha ao montar") }
         }
     }
 
     private fun le32(data: ByteArray, offset: Int): Int =
-        (data[offset].toInt() and 0xff) or
-            ((data[offset + 1].toInt() and 0xff) shl 8) or
-            ((data[offset + 2].toInt() and 0xff) shl 16) or
-            ((data[offset + 3].toInt() and 0xff) shl 24)
+        (data[offset].toInt() and 0xff) or ((data[offset + 1].toInt() and 0xff) shl 8) or
+            ((data[offset + 2].toInt() and 0xff) shl 16) or ((data[offset + 3].toInt() and 0xff) shl 24)
 
-    private fun hex(data: ByteArray): String =
-        data.asList().chunked(16).mapIndexed { index, row ->
-            "%08x  %s".format(
-                index * 16,
-                row.joinToString(" ") { byte -> "%02x".format(byte.toInt() and 0xff) }
-            )
-        }.joinToString("\n")
+    private fun hex(data: ByteArray): String = data.asList().chunked(16).mapIndexed { index, row ->
+        "%08x  %s".format(index * 16, row.joinToString(" ") { byte -> "%02x".format(byte.toInt() and 0xff) })
+    }.joinToString("\n")
 
-    private fun showError(message: String) = AlertDialog.Builder(this)
-        .setTitle("Disk Image")
-        .setMessage(message)
-        .setPositiveButton("OK", null)
-        .show()
+    private fun formatSize(value: Long): String {
+        if (value < 1024) return "$value B"
+        val units = arrayOf("KB", "MB", "GB", "TB")
+        var v = value.toDouble()
+        var i = -1
+        do { v /= 1024; i++ } while (v >= 1024 && i < units.lastIndex)
+        return "%.1f %s".format(java.util.Locale.US, v, units[i])
+    }
 
-    private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    private fun canTouchUi() = !isFinishing && !isDestroyed
+    private fun showError(message: String) {
+        if (!canTouchUi()) return
+        runCatching { AlertDialog.Builder(this).setTitle("Disk Image").setMessage(message).setPositiveButton("OK", null).show() }
+    }
+    private fun toast(message: String) { if (canTouchUi()) Toast.makeText(this, message, Toast.LENGTH_SHORT).show() }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }
