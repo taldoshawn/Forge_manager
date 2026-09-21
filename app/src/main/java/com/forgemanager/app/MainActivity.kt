@@ -32,6 +32,7 @@ import com.forgemanager.app.core.file.FileNode
 import com.forgemanager.app.core.file.FileOperations
 import com.forgemanager.app.core.file.OperationProgress
 import com.forgemanager.app.core.file.putFileLocation
+import com.forgemanager.app.core.security.PathSecurity
 import com.forgemanager.app.archive.ZipOperations
 import com.forgemanager.app.features.apk.ApkInspectorActivity
 import com.forgemanager.app.features.apktools.ApkToolboxActivity
@@ -880,8 +881,8 @@ class MainActivity : Activity() {
                 when {
                     it.title == "Armazenamento interno" -> navigate(controller.activePane, FileLocation.Direct(Environment.getExternalStorageDirectory().path))
                     it.title == "Downloads" -> navigate(controller.activePane, FileLocation.Direct(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path))
-                    it.title == "Android/data" -> navigate(controller.activePane, FileLocation.Direct(File(Environment.getExternalStorageDirectory(), "Android/data").path))
-                    it.title == "Android/obb" -> navigate(controller.activePane, FileLocation.Direct(File(Environment.getExternalStorageDirectory(), "Android/obb").path))
+                    it.title == "Android/data" -> navigate(controller.activePane, FileLocation.Direct(PathSecurity.androidDataBypass()))
+                    it.title == "Android/obb" -> navigate(controller.activePane, FileLocation.Direct(PathSecurity.androidObbBypass()))
                     it.title == "Raiz do sistema (/)" -> navigate(controller.activePane, FileLocation.Direct("/"))
                     it.title == "Autorizar pasta (SAF)" -> requestSafTree()
                     it.title == "Acesso a todos os arquivos" -> requestAllFilesAccess()
