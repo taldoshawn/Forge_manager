@@ -8,7 +8,7 @@ sealed interface FileLocation {
     val displayPath: String
 
     data class Direct(val path: String) : FileLocation {
-        override val displayPath: String = path
+        override val displayPath: String = path.replace("\u200B", "")
     }
 
     data class Saf(
