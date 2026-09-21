@@ -2,6 +2,7 @@ package com.forgemanager.app.features.explorer
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.util.LruCache
 import android.widget.ImageView
 import com.forgemanager.app.core.file.AccessResolver
@@ -18,7 +19,7 @@ import java.io.File
 import java.util.WeakHashMap
 import kotlin.math.max
 
-/** Lightweight thumbnail pipeline for file rows. */
+/** Lightweight thumbnail pipeline for image and video rows. */
 class ThumbnailLoader(private val resolver: AccessResolver) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val jobs = WeakHashMap<ImageView, Job>()
@@ -41,9 +42,13 @@ class ThumbnailLoader(private val resolver: AccessResolver) {
         }
         if (node.size <= 0 || node.size > MAX_SOURCE_BYTES || node.isDirectory) return
 
+        val kind = FileTypeClassifier.classify(node.name, false)
         val job = scope.launch {
             val bitmap = withContext(Dispatchers.IO) {
-                runCatching { decode(node.location, targetPx) }.getOrNull()
+                runCatching {
+                    if (kind == FileKind.VIDEO) decodeVideo(node.location, targetPx)
+                    else decodeImage(node.location, targetPx)
+                }.getOrNull()
             }
             if (bitmap != null && view.tag == key) {
                 cache.put(key, bitmap)
@@ -68,7 +73,7 @@ class ThumbnailLoader(private val resolver: AccessResolver) {
         scope.cancel()
     }
 
-    private suspend fun decode(location: FileLocation, targetPx: Int): Bitmap? {
+    private suspend fun decodeImage(location: FileLocation, targetPx: Int): Bitmap? {
         val requested = targetPx.coerceIn(32, 320)
         val direct = (location as? FileLocation.Direct)?.path?.let(::File)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -98,9 +103,28 @@ class ThumbnailLoader(private val resolver: AccessResolver) {
             }
         } ?: return null
 
+        return scaleDown(decoded, requested * 2)
+    }
+
+    private fun decodeVideo(location: FileLocation, targetPx: Int): Bitmap? {
+        val direct = (location as? FileLocation.Direct)?.path?.let(::File) ?: return null
+        if (!direct.isFile || !direct.canRead()) return null
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(direct.path)
+            val frame = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.frameAtTime
+                ?: return null
+            scaleDown(frame, targetPx.coerceIn(32, 320) * 2)
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private fun scaleDown(decoded: Bitmap, maxTarget: Int): Bitmap {
         val maxSide = max(decoded.width, decoded.height)
-        if (maxSide <= requested * 2) return decoded
-        val scale = (requested * 2f) / maxSide.toFloat()
+        if (maxSide <= maxTarget) return decoded
+        val scale = maxTarget.toFloat() / maxSide.toFloat()
         val width = (decoded.width * scale).toInt().coerceAtLeast(1)
         val height = (decoded.height * scale).toInt().coerceAtLeast(1)
         return Bitmap.createScaledBitmap(decoded, width, height, true).also {
