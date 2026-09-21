@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -45,16 +44,33 @@ class InstalledAppsActivity : ForgeActivity() {
     private lateinit var list: ListView
     private lateinit var status: TextView
     private lateinit var search: EditText
-    private lateinit var appsAdapter: AppsAdapter
     private var apps: List<PackageInfo> = emptyList()
     private var shownApps: List<PackageInfo> = emptyList()
     private var mode: String = MODE_BROWSE
+    private var pendingExtract: PendingExtract? = null
+    private var pendingBulk = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_BROWSE
         setContentView(buildUi())
         load()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!hasSharedStorageAccess()) return
+
+        pendingExtract?.let { pending ->
+            pendingExtract = null
+            apps.firstOrNull { it.packageName == pending.packageName }?.let {
+                extractToDownloads(it, pending.baseOnly, permissionChecked = true)
+            }
+        }
+        if (pendingBulk && apps.isNotEmpty()) {
+            pendingBulk = false
+            confirmBulkExtract(permissionChecked = true)
+        }
     }
 
     override fun onDestroy() {
@@ -69,56 +85,59 @@ class InstalledAppsActivity : ForgeActivity() {
         val top = LinearLayout(this@InstalledAppsActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.rgb(32, 32, 32))
+            setBackgroundColor(android.graphics.Color.rgb(15, 15, 15))
         }
-        top.addView(button("←", forceLight = true) { finish() })
+        top.addView(button("←", light = true) { finish() })
         status = TextView(this@InstalledAppsActivity).apply {
-            text = if (mode == MODE_EXTRACT) "Extrair APKs instalados" else "Aplicativos instalados"
-            textSize = 14f
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(Color.WHITE)
-            setPadding(dp(5), 0, dp(5), 0)
+            text = if (mode == MODE_EXTRACT) "Extrair APKs" else "Aplicativos instalados"
+            textSize = 15f
+            maxLines = 2
+            setTextColor(android.graphics.Color.WHITE)
+            setPadding(dp(6), 0, dp(6), 0)
         }
         top.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
-        top.addView(button("↓USR", forceLight = true) { confirmBulkExtract() })
-        addView(top, LinearLayout.LayoutParams(-1, dp(48)))
+        top.addView(button("↓USR", light = true) { confirmBulkExtract() })
+        addView(top, LinearLayout.LayoutParams(-1, dp(54)))
 
         search = EditText(this@InstalledAppsActivity).apply {
             hint = "Buscar app ou pacote"
             setSingleLine()
-            textSize = 12.5f
+            textSize = 13f
             setTextColor(UiPreferences.textPrimary(this@InstalledAppsActivity))
             setHintTextColor(UiPreferences.textSecondary(this@InstalledAppsActivity))
             setBackgroundColor(UiPreferences.elevatedSurface(this@InstalledAppsActivity))
-            setPadding(dp(10), 0, dp(10), 0)
+            setPadding(dp(12), 0, dp(12), 0)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = filterApps()
                 override fun afterTextChanged(s: Editable?) = Unit
             })
         }
-        addView(search, LinearLayout.LayoutParams(-1, dp(42)))
+        addView(search, LinearLayout.LayoutParams(-1, dp(48)))
 
-        appsAdapter = AppsAdapter()
         list = ListView(this@InstalledAppsActivity).apply {
-            setBackgroundColor(UiPreferences.surface(this@InstalledAppsActivity))
-            divider = null
+            setBackgroundColor(UiPreferences.background(this@InstalledAppsActivity))
             dividerHeight = 0
-            adapter = appsAdapter
-            setOnItemClickListener { _, _, position, _ -> shownApps.getOrNull(position)?.let(::showActions) }
+            setOnItemClickListener { _, _, position, _ ->
+                shownApps.getOrNull(position)?.let { info ->
+                    if (mode == MODE_EXTRACT) extractToDownloads(info, baseOnly = false)
+                    else showActions(info)
+                }
+            }
+            setOnItemLongClickListener { _, _, position, _ ->
+                shownApps.getOrNull(position)?.let(::showActions)
+                true
+            }
         }
         addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
-    private fun button(label: String, forceLight: Boolean = false, action: () -> Unit) = Button(this).apply {
+    private fun button(label: String, light: Boolean = false, action: () -> Unit) = Button(this).apply {
         text = label
         textSize = if (label.length > 2) 9f else 16f
-        setTextColor(if (forceLight) Color.WHITE else UiPreferences.textPrimary(this@InstalledAppsActivity))
-        setBackgroundColor(Color.TRANSPARENT)
-        minWidth = dp(42)
-        minHeight = dp(40)
-        setPadding(dp(6), 0, dp(6), 0)
+        setTextColor(if (light) android.graphics.Color.WHITE else UiPreferences.textPrimary(this@InstalledAppsActivity))
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        minWidth = dp(48)
         setOnClickListener { action() }
     }
 
@@ -145,80 +164,9 @@ class InstalledAppsActivity : ForgeActivity() {
             val label = runCatching { packageManager.getApplicationLabel(info.applicationInfo!!).toString() }.getOrDefault("")
             label.contains(query, true) || info.packageName.contains(query, true)
         }
-        appsAdapter.notifyDataSetChanged()
+        list.adapter = AppsAdapter(shownApps)
         status.text = if (mode == MODE_EXTRACT) "Extrair APKs • ${shownApps.size} apps" else "Aplicativos • ${shownApps.size}"
     }
-
-    private inner class AppsAdapter : BaseAdapter() {
-        override fun getCount(): Int = shownApps.size
-        override fun getItem(position: Int): PackageInfo = shownApps[position]
-        override fun getItemId(position: Int): Long = shownApps[position].packageName.hashCode().toLong()
-
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val holder: AppRowHolder
-            val row = if (convertView == null) {
-                LinearLayout(this@InstalledAppsActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(8), dp(4), dp(8), dp(4))
-                    setBackgroundColor(UiPreferences.surface(this@InstalledAppsActivity))
-
-                    val icon = ImageView(this@InstalledAppsActivity).apply {
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                    }
-                    addView(icon, LinearLayout.LayoutParams(dp(34), dp(34)))
-
-                    val texts = LinearLayout(this@InstalledAppsActivity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        setPadding(dp(8), 0, 0, 0)
-                    }
-                    val title = TextView(this@InstalledAppsActivity).apply {
-                        textSize = 12.5f
-                        maxLines = 1
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                        setTextColor(UiPreferences.textPrimary(this@InstalledAppsActivity))
-                    }
-                    val subtitle = TextView(this@InstalledAppsActivity).apply {
-                        textSize = 9.5f
-                        maxLines = 2
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                        setTextColor(UiPreferences.textSecondary(this@InstalledAppsActivity))
-                    }
-                    texts.addView(title, LinearLayout.LayoutParams(-1, -2))
-                    texts.addView(subtitle, LinearLayout.LayoutParams(-1, -2))
-                    addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-                    holder = AppRowHolder(icon, title, subtitle)
-                    tag = holder
-                }
-            } else {
-                holder = convertView.tag as AppRowHolder
-                convertView
-            }
-
-            row.layoutParams = (row.layoutParams ?: android.widget.AbsListView.LayoutParams(-1, dp(52))).apply {
-                height = dp(52)
-            }
-            row.setBackgroundColor(UiPreferences.surface(this@InstalledAppsActivity))
-            val info = getItem(position)
-            val appInfo = info.applicationInfo
-            val label = runCatching { packageManager.getApplicationLabel(appInfo!!).toString() }.getOrDefault(info.packageName)
-            val system = (appInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0
-            val splitCount = appInfo?.splitSourceDirs?.size ?: 0
-            holder.title.text = label
-            holder.title.setTextColor(UiPreferences.textPrimary(this@InstalledAppsActivity))
-            holder.subtitle.text = buildString {
-                append(info.packageName)
-                if (!info.versionName.isNullOrBlank()) append("  ").append(info.versionName)
-                append("  •  ").append(if (system) "sistema" else "usuário")
-                if (splitCount > 0) append("  •  ").append(splitCount + 1).append(" APKs")
-            }
-            holder.subtitle.setTextColor(UiPreferences.textSecondary(this@InstalledAppsActivity))
-            holder.icon.setImageDrawable(runCatching { packageManager.getApplicationIcon(appInfo!!) }.getOrNull())
-            return row
-        }
-    }
-
-    private data class AppRowHolder(val icon: ImageView, val title: TextView, val subtitle: TextView)
 
     private fun showActions(info: PackageInfo) {
         val appInfo = info.applicationInfo ?: return
@@ -233,9 +181,25 @@ class InstalledAppsActivity : ForgeActivity() {
             "Detalhes do sistema",
             "Desinstalar"
         )
+        val heading = buildString {
+            append(info.packageName)
+            append("\n")
+            append(if (system) "Sistema" else "Usuário")
+            append("  •  APKs: ").append(splits + 1)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(4), dp(22), dp(4))
+            addView(TextView(this@InstalledAppsActivity).apply {
+                text = heading
+                textSize = 13f
+                setTextColor(UiPreferences.textSecondary(this@InstalledAppsActivity))
+                setPadding(0, 0, 0, dp(10))
+            })
+        }
         AlertDialog.Builder(this)
             .setTitle(label)
-            .setMessage("${info.packageName}\n${if (system) "Sistema" else "Usuário"}\nAPKs: ${splits + 1}")
+            .setView(box)
             .setItems(actions) { _, which ->
                 when (which) {
                     0 -> extractToDownloads(info, baseOnly = false)
@@ -247,11 +211,12 @@ class InstalledAppsActivity : ForgeActivity() {
                     5 -> startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${info.packageName}")))
                 }
             }
+            .setNegativeButton("Cancelar", null)
             .show()
     }
 
-    private fun extractToDownloads(info: PackageInfo, baseOnly: Boolean) {
-        if (!ensureExtractionAccess()) return
+    private fun extractToDownloads(info: PackageInfo, baseOnly: Boolean, permissionChecked: Boolean = false) {
+        if (!permissionChecked && !ensureSharedStorageAccess(info, baseOnly)) return
         status.text = "Extraindo ${info.packageName}…"
         scope.launch {
             val result = runCatching { withContext(Dispatchers.IO) { extractPackage(info, baseOnly) } }
@@ -259,29 +224,58 @@ class InstalledAppsActivity : ForgeActivity() {
                 status.text = "Extraído: ${file.name}"
                 AlertDialog.Builder(this@InstalledAppsActivity)
                     .setTitle("APK extraído")
-                    .setMessage("Salvo em:\n${file.path}\n\n${if (file.extension.equals("apks", true)) "O app usa split APKs; o arquivo .apks contém base.apk + splits." else "APK pronto para uso."}")
+                    .setMessage("Salvo em:\n${file.path}\n\n${if (file.extension.equals("apks", true)) "O app usa split APKs; o .apks contém base.apk + splits." else "APK pronto para uso."}")
                     .setPositiveButton("OK", null)
                     .setNeutralButton("Compartilhar") { _, _ -> shareFile(file) }
                     .show()
             }.onFailure {
                 status.text = "Falha ao extrair"
-                toast(it.message ?: "Falha ao extrair APK")
+                showExtractionError(it)
             }
         }
     }
 
-    private fun ensureExtractionAccess(): Boolean {
-        if (Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()) return true
-        toast("Autorize 'Acesso a todos os arquivos' para salvar APKs em Download")
-        val appUri = Uri.parse("package:$packageName")
-        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, appUri)
-        runCatching { startActivity(intent) }
-            .recoverCatching { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+    private fun ensureSharedStorageAccess(info: PackageInfo, baseOnly: Boolean): Boolean {
+        if (hasSharedStorageAccess()) return true
+        pendingExtract = PendingExtract(info.packageName, baseOnly)
+        AlertDialog.Builder(this)
+            .setTitle("Permissão necessária")
+            .setMessage("Para salvar o APK em Download/ForgeManager/APKs, permita ao Forge Manager acesso a todos os arquivos. Ao voltar para o app, a extração continua automaticamente.")
+            .setPositiveButton("Permitir") { _, _ -> openAllFilesAccessSettings() }
+            .setNegativeButton("Cancelar") { _, _ -> pendingExtract = null }
+            .show()
         return false
     }
 
-    private fun confirmBulkExtract() {
-        if (!ensureExtractionAccess()) return
+    private fun hasSharedStorageAccess(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+
+    private fun openAllFilesAccessSettings() {
+        val appUri = Uri.parse("package:$packageName")
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, appUri)
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, appUri)
+        }
+        runCatching { startActivity(intent) }
+            .onFailure {
+                runCatching { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+                    .onFailure { toast("Não foi possível abrir a tela de permissão") }
+            }
+    }
+
+    private fun confirmBulkExtract(permissionChecked: Boolean = false) {
+        if (!permissionChecked && !hasSharedStorageAccess()) {
+            pendingBulk = true
+            AlertDialog.Builder(this)
+                .setTitle("Permissão necessária")
+                .setMessage("A extração em lote salva em Download/ForgeManager/APKs. Permita acesso a todos os arquivos e volte para o Forge Manager.")
+                .setPositiveButton("Permitir") { _, _ -> openAllFilesAccessSettings() }
+                .setNegativeButton("Cancelar") { _, _ -> pendingBulk = false }
+                .show()
+            return
+        }
+
         val userApps = apps.filter { info ->
             val flags = info.applicationInfo?.flags ?: 0
             flags and ApplicationInfo.FLAG_SYSTEM == 0
@@ -329,7 +323,7 @@ class InstalledAppsActivity : ForgeActivity() {
         val base = appInfo.sourceDir?.let(::File)?.takeIf { it.isFile } ?: error("base.apk não encontrado")
         val splits = appInfo.splitSourceDirs.orEmpty().map(::File).filter { it.isFile }
         val destination = downloadsDirectory().apply {
-            if (!exists() && !mkdirs()) error("Não foi possível criar ${path}")
+            if (!exists() && !mkdirs()) error("Não foi possível criar $path")
         }
         val version = sanitize(info.versionName ?: "unknown")
         val stem = sanitize("${info.packageName}-$version")
@@ -353,27 +347,29 @@ class InstalledAppsActivity : ForgeActivity() {
 
     private fun shareExport(info: PackageInfo) {
         scope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) {
-                val dir = File(cacheDir, "shared-apks").apply { mkdirs() }
-                val appInfo = info.applicationInfo ?: error("ApplicationInfo indisponível")
-                val base = appInfo.sourceDir?.let(::File)?.takeIf { it.isFile } ?: error("base.apk não encontrado")
-                val splits = appInfo.splitSourceDirs.orEmpty().map(::File).filter { it.isFile }
-                val stem = sanitize("${info.packageName}-${info.versionName ?: "unknown"}")
-                if (splits.isEmpty()) {
-                    File(dir, "$stem.apk").also { copyFile(base, it) }
-                } else {
-                    File(dir, "$stem.apks").also { output ->
-                        FileOutputStream(output).use { raw ->
-                            ZipOutputStream(raw.buffered(128 * 1024)).use { zip ->
-                                addZipFile(zip, base, "base.apk")
-                                splits.forEach { addZipFile(zip, it, sanitize(it.name)) }
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val dir = File(cacheDir, "shared-apks").apply { mkdirs() }
+                    val appInfo = info.applicationInfo ?: error("ApplicationInfo indisponível")
+                    val base = appInfo.sourceDir?.let(::File)?.takeIf { it.isFile } ?: error("base.apk não encontrado")
+                    val splits = appInfo.splitSourceDirs.orEmpty().map(::File).filter { it.isFile }
+                    val stem = sanitize("${info.packageName}-${info.versionName ?: "unknown"}")
+                    if (splits.isEmpty()) {
+                        File(dir, "$stem.apk").also { copyFile(base, it) }
+                    } else {
+                        File(dir, "$stem.apks").also { output ->
+                            FileOutputStream(output).use { raw ->
+                                ZipOutputStream(raw.buffered(128 * 1024)).use { zip ->
+                                    addZipFile(zip, base, "base.apk")
+                                    splits.forEach { addZipFile(zip, it, sanitize(it.name)) }
+                                }
+                                raw.fd.sync()
                             }
-                            raw.fd.sync()
                         }
                     }
                 }
-            }}
-            result.onSuccess(::shareFile).onFailure { toast(it.message ?: "Falha ao exportar") }
+            }
+            result.onSuccess(::shareFile).onFailure(::showExtractionError)
         }
     }
 
@@ -386,6 +382,16 @@ class InstalledAppsActivity : ForgeActivity() {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         runCatching { startActivity(Intent.createChooser(send, "Compartilhar pacote")) }
             .onFailure { toast("Nenhum aplicativo compatível") }
+    }
+
+    private fun showExtractionError(error: Throwable) {
+        val message = error.message ?: "Falha ao extrair APK"
+        AlertDialog.Builder(this)
+            .setTitle("Falha ao extrair APK")
+            .setMessage("$message\n\nSe o destino estiver em Downloads, confirme que o Forge Manager possui acesso a todos os arquivos.")
+            .setPositiveButton("OK", null)
+            .setNeutralButton("Permissões") { _, _ -> openAllFilesAccessSettings() }
+            .show()
     }
 
     private fun addZipFile(zip: ZipOutputStream, source: File, entryName: String) {
@@ -427,6 +433,68 @@ class InstalledAppsActivity : ForgeActivity() {
     private fun sanitize(value: String): String = value
         .replace(Regex("[^A-Za-z0-9._() -]"), "_")
         .trim().trim('.').take(140).ifBlank { "package" }
+
+    private inner class AppsAdapter(private val values: List<PackageInfo>) : BaseAdapter() {
+        override fun getCount(): Int = values.size
+        override fun getItem(position: Int): PackageInfo = values[position]
+        override fun getItemId(position: Int): Long = values[position].packageName.hashCode().toLong()
+        override fun hasStableIds(): Boolean = true
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val holder: AppHolder
+            val row = if (convertView == null) {
+                LinearLayout(this@InstalledAppsActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(5), dp(10), dp(5))
+                    holder = AppHolder(
+                        ImageView(this@InstalledAppsActivity).also { icon ->
+                            icon.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                            addView(icon, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(10) })
+                        },
+                        TextView(this@InstalledAppsActivity).also { title ->
+                            title.textSize = 13f
+                            title.setTextColor(UiPreferences.textPrimary(this@InstalledAppsActivity))
+                        },
+                        TextView(this@InstalledAppsActivity).also { details ->
+                            details.textSize = 9.5f
+                            details.maxLines = 2
+                            details.setTextColor(UiPreferences.textSecondary(this@InstalledAppsActivity))
+                        }
+                    )
+                    addView(LinearLayout(this@InstalledAppsActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        addView(holder.title, LinearLayout.LayoutParams(-1, -2))
+                        addView(holder.details, LinearLayout.LayoutParams(-1, -2))
+                    }, LinearLayout.LayoutParams(0, dp(56), 1f))
+                    tag = holder
+                }
+            } else {
+                holder = convertView.tag as AppHolder
+                convertView as LinearLayout
+            }
+
+            val info = getItem(position)
+            val appInfo = info.applicationInfo
+            val label = runCatching { packageManager.getApplicationLabel(appInfo!!).toString() }.getOrDefault(info.packageName)
+            val system = (appInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0
+            val splitCount = appInfo?.splitSourceDirs?.size ?: 0
+            holder.icon.setImageDrawable(runCatching { packageManager.getApplicationIcon(info.packageName) }.getOrNull())
+            holder.title.text = label
+            holder.details.text = buildString {
+                append(info.packageName)
+                if (!info.versionName.isNullOrBlank()) append("  ").append(info.versionName)
+                append("  •  ").append(if (system) "sistema" else "usuário")
+                if (splitCount > 0) append("  •  ").append(splitCount + 1).append(" APKs")
+            }
+            row.setBackgroundColor(UiPreferences.background(this@InstalledAppsActivity))
+            return row
+        }
+    }
+
+    private data class AppHolder(val icon: ImageView, val title: TextView, val details: TextView)
+    private data class PendingExtract(val packageName: String, val baseOnly: Boolean)
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
