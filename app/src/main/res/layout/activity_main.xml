@@ -9,25 +9,25 @@
     <LinearLayout
         android:id="@+id/topBar"
         android:layout_width="match_parent"
-        android:layout_height="68dp"
+        android:layout_height="60dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="@drawable/bg_top_bar"
-        android:paddingStart="3dp"
-        android:paddingEnd="5dp">
+        android:paddingStart="4dp"
+        android:paddingEnd="6dp">
 
         <ImageButton
             android:id="@+id/menuButton"
             style="@style/TopIconButton"
             android:contentDescription="@string/menu"
             android:src="@drawable/ic_nav_menu"
-            android:tint="#FFFFFFFF" />
+            android:tint="#F5F7FA" />
 
         <ImageView
-            android:layout_width="34dp"
-            android:layout_height="34dp"
-            android:layout_marginStart="1dp"
-            android:layout_marginEnd="8dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="10dp"
             android:contentDescription="@null"
             android:scaleType="fitCenter"
             android:src="@drawable/fm_app_logo_original" />
@@ -55,7 +55,7 @@
                 android:id="@+id/folderInfo"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
+                android:layout_marginTop="2dp"
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:textColor="@color/fm_top_secondary"
@@ -67,13 +67,13 @@
             style="@style/TopIconButton"
             android:contentDescription="@string/more"
             android:src="@drawable/ic_nav_more"
-            android:tint="#FFFFFFFF" />
+            android:tint="#F5F7FA" />
     </LinearLayout>
 
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="#223A5A" />
+        android:background="@color/fm_divider" />
 
     <LinearLayout
         android:id="@+id/panes"
@@ -107,15 +107,15 @@
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="match_parent"
-        android:layout_height="58dp"
+        android:layout_height="54dp"
         android:background="@drawable/bg_bottom_bar"
         android:gravity="center"
         android:orientation="horizontal">
 
-        <ImageButton android:id="@+id/backButton" style="@style/BottomIconButton" android:contentDescription="@string/back" android:src="@drawable/ic_nav_back" android:tint="#FFD7DBE0" />
-        <ImageButton android:id="@+id/forwardButton" style="@style/BottomIconButton" android:contentDescription="@string/forward" android:src="@drawable/ic_nav_forward" android:tint="#FFD7DBE0" />
+        <ImageButton android:id="@+id/backButton" style="@style/BottomIconButton" android:contentDescription="@string/back" android:src="@drawable/ic_nav_back" android:tint="#D7DBE0" />
+        <ImageButton android:id="@+id/forwardButton" style="@style/BottomIconButton" android:contentDescription="@string/forward" android:src="@drawable/ic_nav_forward" android:tint="#D7DBE0" />
         <ImageButton android:id="@+id/createButton" style="@style/BottomIconButton" android:contentDescription="@string/create" android:src="@drawable/ic_nav_add" android:tint="@color/fm_accent" />
         <ImageButton android:id="@+id/syncButton" style="@style/BottomIconButton" android:contentDescription="@string/sync" android:src="@drawable/ic_nav_sync" android:tint="@color/fm_accent_alt" />
-        <ImageButton android:id="@+id/upButton" style="@style/BottomIconButton" android:contentDescription="@string/up" android:src="@drawable/ic_nav_up" android:tint="#FFD7DBE0" />
+        <ImageButton android:id="@+id/upButton" style="@style/BottomIconButton" android:contentDescription="@string/up" android:src="@drawable/ic_nav_up" android:tint="#D7DBE0" />
     </LinearLayout>
 </LinearLayout>
