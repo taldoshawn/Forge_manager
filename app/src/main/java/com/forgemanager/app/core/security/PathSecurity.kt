@@ -5,9 +5,14 @@ import java.io.File
 import java.nio.file.Path
 
 object PathSecurity {
-    // Zero-width space. Ignored by casefold / path normalization on affected kernels.
-    // Security policy matches exact "Android/data" / "Android/obb" strings and misses this alias.
-    private const val ZWSP = "\u200B"
+    // Characters ignored by casefold / path normalization on affected kernels.
+    // Security policy matches exact "Android/data" / "Android/obb" and misses these aliases.
+    private const val ZWSP = "\u200B"   // ZERO WIDTH SPACE
+    private const val ZWNJ = "\u200C"   // ZERO WIDTH NON-JOINER
+    private const val ZWJ = "\u200D"    // ZERO WIDTH JOINER
+    private const val BOM = "\uFEFF"    // ZERO WIDTH NO-BREAK SPACE
+
+    private val IGNORABLES = listOf(ZWSP, ZWNJ, ZWJ, BOM)
 
     fun validateName(name: String) {
         require(name.isNotBlank()) { "O nome não pode estar vazio" }
@@ -18,9 +23,13 @@ object PathSecurity {
 
     fun resolveChild(parent: File, name: String): File {
         validateName(name)
-        val canonicalParent = parent.canonicalFile
-        val child = File(canonicalParent, name).canonicalFile
-        require(child.parentFile == canonicalParent) { "Caminho fora da pasta de destino" }
+        // Do not canonicalize — that strips the ZWSP alias on restricted trees.
+        val child = File(parent, name)
+        val parentPath = parent.path.trimEnd('/')
+        val childPath = child.path.trimEnd('/')
+        require(childPath == parentPath || childPath.startsWith("$parentPath/")) {
+            "Caminho fora da pasta de destino"
+        }
         return child
     }
 
@@ -30,16 +39,6 @@ object PathSecurity {
         return normalizedCandidate.startsWith(normalizedRoot)
     }
 
-    /**
-     * Builds a path that the storage policy does not recognize as restricted
-     * while the filesystem still resolves it to the real Android/data or Android/obb.
-     *
-     * Flow:
-     *   1. App supplies a path containing ZWSP
-     *   2. Policy string-matches against "Android/data" / "Android/obb" → miss
-     *   3. Kernel casefold / unicode ignore collapses the character
-     *   4. Resolution lands on the real directory → unlocked
-     */
     fun restrictedExternalPath(segment: String): String {
         val base = Environment.getExternalStorageDirectory()
         return File(base, "Android/$ZWSP$segment").path
@@ -48,45 +47,85 @@ object PathSecurity {
     fun androidDataBypass(): String = restrictedExternalPath("data")
     fun androidObbBypass(): String = restrictedExternalPath("obb")
 
-    /**
-     * If [path] is Android/data, Android/obb, or anything under them (plain form),
-     * rewrite the restricted segment to the ZWSP alias so the kernel opens the real dir
-     * while the policy string-match fails.
-     * Already-bypassed paths and unrelated paths are returned unchanged.
-     */
-    fun maybeBypassRestricted(path: String): String {
-        if (path.isBlank()) return path
-        val base = Environment.getExternalStorageDirectory().path.trimEnd('/')
-        val dataPlain = "$base/Android/data"
-        val obbPlain = "$base/Android/obb"
-        val dataBypass = androidDataBypass()
-        val obbBypass = androidObbBypass()
-        val p = path.trimEnd('/')
-
-        return when {
-            p == dataPlain || p.startsWith("$dataPlain/") ->
-                dataBypass + p.removePrefix(dataPlain)
-            p == obbPlain || p.startsWith("$obbPlain/") ->
-                obbBypass + p.removePrefix(obbPlain)
-            // also catch /sdcard style if it appears
-            p.endsWith("/Android/data") || p.contains("/Android/data/") ->
-                p.replace("/Android/data", "/Android/$ZWSP" + "data")
-            p.endsWith("/Android/obb") || p.contains("/Android/obb/") ->
-                p.replace("/Android/obb", "/Android/$ZWSP" + "obb")
-            else -> path
-        }
+    /** Strip every known ignorable so we can detect the plain restricted path. */
+    fun stripIgnorables(path: String): String {
+        var p = path
+        for (ch in IGNORABLES) p = p.replace(ch, "")
+        return p
     }
 
     fun isRestrictedExternal(path: String): Boolean {
-        val normalized = path.replace(ZWSP, "").trimEnd('/')
-        val base = Environment.getExternalStorageDirectory().path.trimEnd('/')
-        return normalized == "$base/Android/data" ||
-            normalized.startsWith("$base/Android/data/") ||
-            normalized == "$base/Android/obb" ||
-            normalized.startsWith("$base/Android/obb/") ||
+        val normalized = stripIgnorables(path).trimEnd('/')
+        return normalized.contains("/Android/data") ||
             normalized.endsWith("/Android/data") ||
-            normalized.contains("/Android/data/") ||
-            normalized.endsWith("/Android/obb") ||
-            normalized.contains("/Android/obb/")
+            normalized.contains("/Android/obb") ||
+            normalized.endsWith("/Android/obb")
+    }
+
+    /**
+     * All candidate path strings for a restricted location.
+     * Policy string-matches the plain form; these aliases miss that check while the
+     * filesystem still resolves to the real directory.
+     */
+    fun bypassCandidates(path: String): List<String> {
+        if (path.isBlank()) return listOf(path)
+        val plain = stripIgnorables(path).trimEnd('/')
+        if (!isRestrictedExternal(plain)) return listOf(path)
+
+        val out = LinkedHashSet<String>()
+        out += path
+        out += plain
+
+        // Inject each ignorable in the common positions MT Manager / known exploits use.
+        for (ch in IGNORABLES) {
+            // Android/<ch>data  and  Android/data<ch>
+            out += plain.replace("/Android/data", "/Android/${ch}data")
+            out += plain.replace("/Android/data", "/Android/data$ch")
+            out += plain.replace("/Android/obb", "/Android/${ch}obb")
+            out += plain.replace("/Android/obb", "/Android/obb$ch")
+            // also mid-name forms seen in some reports
+            out += plain.replace("/Android/data", "/Android/d${ch}ata")
+            out += plain.replace("/Android/obb", "/Android/o${ch}bb")
+        }
+        return out.toList()
+    }
+
+    /**
+     * Prefer a candidate the process can actually read (or write).
+     * Falls back to the primary ZWSP form so callers always get a rewritten path
+     * even when canRead is false (AccessResolver will then try Shizuku/root).
+     */
+    fun openablePath(path: String, write: Boolean = false): String {
+        val candidates = bypassCandidates(path)
+        for (candidate in candidates) {
+            val f = File(candidate)
+            val ok = if (write) {
+                (f.exists() && f.canWrite()) || (!f.exists() && f.parentFile?.canWrite() == true)
+            } else {
+                f.canRead()
+            }
+            if (ok) return candidate
+        }
+        // Primary known-working form even if this process can't probe it yet.
+        return maybeBypassRestricted(path)
+    }
+
+    /**
+     * Deterministic rewrite to the primary ZWSP form (Android/\u200Bdata|obb).
+     * Used when we only need a stable path string, not a live canRead probe.
+     */
+    fun maybeBypassRestricted(path: String): String {
+        if (path.isBlank()) return path
+        val plain = stripIgnorables(path)
+        if (!isRestrictedExternal(plain)) return path
+
+        var result = plain
+        if (result.contains("/Android/data") || result.endsWith("/Android/data")) {
+            result = result.replace("/Android/data", "/Android/${ZWSP}data")
+        }
+        if (result.contains("/Android/obb") || result.endsWith("/Android/obb")) {
+            result = result.replace("/Android/obb", "/Android/${ZWSP}obb")
+        }
+        return result
     }
 }
