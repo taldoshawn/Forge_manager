@@ -1,22 +1,112 @@
 package com.forgemanager.app.features.explorer
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
-import androidx.core.content.ContextCompat
+import android.util.LruCache
 
 /**
- * Resolves the real per-format image assets supplied for Forge Manager.
+ * Resolves the per-format artwork supplied for Forge Manager.
  *
- * The atlas no longer draws replacement artwork programmatically. When an
- * original cropped asset exists it is returned directly. Unknown formats
- * deliberately return null so FileListAdapter can use its generic fallback.
+ * The uploaded PNGs were cut from a white sheet and some of them still contain
+ * opaque white antialias pixels around the transparent silhouette. Android
+ * renders those pixels very clearly on dark/colored backgrounds. The atlas
+ * cleans only the outer one-pixel fringe and isolated cutout specks, keeps the
+ * original interior artwork intact, then caches the result.
  */
 object FileIconAtlas {
+    private val cache = object : LruCache<Int, Bitmap>(12 * 1024 * 1024) {
+        override fun sizeOf(key: Int, value: Bitmap): Int = value.allocationByteCount
+    }
+
     fun drawable(context: Context, name: String, isDirectory: Boolean, kind: FileKind): Drawable? {
         val key = keyFor(name, isDirectory, kind) ?: return null
         val resId = context.resources.getIdentifier("fm_format_$key", "drawable", context.packageName)
         if (resId == 0) return null
-        return ContextCompat.getDrawable(context, resId)
+        val cached = synchronized(cache) { cache.get(resId) }
+        val bitmap = cached ?: run {
+            val decoded = BitmapFactory.decodeResource(context.resources, resId) ?: return null
+            val cleaned = cleanCutout(decoded)
+            synchronized(cache) { cache.put(resId, cleaned) }
+            cleaned
+        }
+        return BitmapDrawable(context.resources, bitmap)
+    }
+
+    /** Removes white matte contamination without deleting legitimate white artwork. */
+    private fun cleanCutout(source: Bitmap): Bitmap {
+        val width = source.width
+        val height = source.height
+        if (width <= 2 || height <= 2) return source
+        val pixels = IntArray(width * height)
+        source.getPixels(pixels, 0, width, 0, 0, width, height)
+        val original = pixels.copyOf()
+
+        fun alphaAt(x: Int, y: Int): Int = Color.alpha(original[y * width + x])
+        fun isCore(x: Int, y: Int): Boolean {
+            if (x <= 0 || y <= 0 || x >= width - 1 || y >= height - 1 || alphaAt(x, y) == 0) return false
+            for (dy in -1..1) for (dx in -1..1) {
+                if (alphaAt(x + dx, y + dy) == 0) return false
+            }
+            return true
+        }
+
+        // Remove tiny isolated pixels left by the old white-background crop.
+        repeat(2) {
+            val snapshot = pixels.copyOf()
+            for (y in 1 until height - 1) for (x in 1 until width - 1) {
+                val index = y * width + x
+                if (Color.alpha(snapshot[index]) == 0) continue
+                var neighbours = 0
+                for (dy in -1..1) for (dx in -1..1) {
+                    if (dx == 0 && dy == 0) continue
+                    if (Color.alpha(snapshot[(y + dy) * width + (x + dx)]) > 0) neighbours++
+                }
+                if (neighbours <= 1) pixels[index] = Color.TRANSPARENT
+            }
+        }
+
+        // Defringe boundary pixels by borrowing color from the nearest interior
+        // pixel. This fixes the visible white outline while preserving white
+        // document icons because their own interior is also white.
+        for (y in 0 until height) for (x in 0 until width) {
+            val index = y * width + x
+            if (Color.alpha(original[index]) == 0) continue
+            var boundary = x == 0 || y == 0 || x == width - 1 || y == height - 1
+            if (!boundary) {
+                loop@ for (dy in -1..1) for (dx in -1..1) {
+                    if (dx == 0 && dy == 0) continue
+                    if (alphaAt(x + dx, y + dy) == 0) { boundary = true; break@loop }
+                }
+            }
+            if (!boundary) continue
+
+            var replacement: Int? = null
+            var bestDistance = Int.MAX_VALUE
+            for (radius in 1..3) {
+                for (dy in -radius..radius) for (dx in -radius..radius) {
+                    val nx = x + dx
+                    val ny = y + dy
+                    if (nx !in 1 until width - 1 || ny !in 1 until height - 1) continue
+                    if (!isCore(nx, ny)) continue
+                    val distance = dx * dx + dy * dy
+                    if (distance < bestDistance) {
+                        bestDistance = distance
+                        replacement = original[ny * width + nx]
+                    }
+                }
+                if (replacement != null) break
+            }
+            replacement?.let { core ->
+                val alpha = Color.alpha(original[index]).coerceAtMost(218)
+                pixels[index] = Color.argb(alpha, Color.red(core), Color.green(core), Color.blue(core))
+            }
+        }
+
+        return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
     }
 
     fun keyFor(name: String, isDirectory: Boolean, kind: FileKind): String? {
