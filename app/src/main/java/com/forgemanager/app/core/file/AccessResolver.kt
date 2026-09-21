@@ -18,14 +18,18 @@ class AccessResolver(
     }
 
     private suspend fun resolveDirect(location: FileLocation.Direct, write: Boolean): FileBackend {
-        // Prefer the ZWSP-rewritten path for restricted external dirs so direct access wins
-        // without falling through to Shizuku/root or throwing.
-        val candidatePath = PathSecurity.maybeBypassRestricted(location.path)
-        val file = File(candidatePath)
-        val directAllowed = if (write) {
-            (file.exists() && file.canWrite()) || (!file.exists() && file.parentFile?.canWrite() == true)
-        } else file.canRead()
-        if (directAllowed) return direct
+        // Probe every ignorable-character alias. If any form is readable/writable,
+        // stay on DirectFileBackend — no error dialog, no Shizuku/root required.
+        for (candidate in PathSecurity.bypassCandidates(location.path)) {
+            val file = File(candidate)
+            val ok = if (write) {
+                (file.exists() && file.canWrite()) ||
+                    (!file.exists() && file.parentFile?.canWrite() == true)
+            } else {
+                file.canRead()
+            }
+            if (ok) return direct
+        }
         if (shizuku.supports(location)) return shizuku
         if (root.supports(location)) return root
         throw FileAccessException("O Android bloqueou este caminho. Autorize uma pasta SAF, Shizuku ou root.")
