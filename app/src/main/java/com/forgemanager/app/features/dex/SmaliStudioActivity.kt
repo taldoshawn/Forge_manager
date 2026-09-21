@@ -3,8 +3,11 @@ package com.forgemanager.app.features.dex
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -20,10 +23,13 @@ import com.forgemanager.app.core.file.putFileLocation
 import com.forgemanager.app.core.file.readFileLocation
 import com.forgemanager.app.core.ui.ForgeActivity
 import com.forgemanager.app.features.editor.TextEditorActivity
+import com.forgemanager.app.features.settings.UiPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jf.baksmali.Baksmali
@@ -49,6 +55,7 @@ class SmaliStudioActivity : ForgeActivity() {
     private lateinit var inputDex: File
     private lateinit var smaliDir: File
     private lateinit var rebuiltDex: File
+    private lateinit var cacheMarker: File
     private lateinit var status: TextView
     private lateinit var query: EditText
     private lateinit var list: ListView
@@ -58,6 +65,7 @@ class SmaliStudioActivity : ForgeActivity() {
     private var disassembled = false
     private var rebuilt = false
     private var mode = SearchMode.CLASSES
+    private var searchJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,43 +77,47 @@ class SmaliStudioActivity : ForgeActivity() {
         inputDex = File(workspace, "input.dex")
         smaliDir = File(workspace, "smali")
         rebuiltDex = File(workspace, "rebuilt.dex")
+        cacheMarker = File(workspace, "source.meta")
         setContentView(buildUi())
         materializeAndDisassemble()
     }
 
     override fun onDestroy() {
+        searchJob?.cancel()
         scope.cancel()
         super.onDestroy()
     }
 
     private fun buildUi() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setBackgroundColor(Color.rgb(16, 17, 20))
+        setBackgroundColor(UiPreferences.background(this@SmaliStudioActivity))
 
         val top = LinearLayout(this@SmaliStudioActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.rgb(23, 24, 28))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(UiPreferences.accent(this@SmaliStudioActivity), UiPreferences.accentAlt(this@SmaliStudioActivity))
+            )
         }
-        top.addView(button("←") { finish() })
+        top.addView(button("←", white = true) { finish() })
         status = TextView(this@SmaliStudioActivity).apply {
             setTextColor(Color.WHITE)
             text = displayName
+            textSize = 12f
             maxLines = 2
-            setPadding(dp(6), 0, dp(6), 0)
+            setPadding(dp(7), 0, dp(7), 0)
         }
         top.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
-        top.addView(button("REBUILD") { rebuild() }.apply { textSize = 9f })
-        top.addView(button("APLICAR") { applyRebuilt() }.apply { textSize = 9f })
+        top.addView(button("REBUILD", white = true) { rebuild() }.apply { textSize = 8.5f })
+        top.addView(button("APLICAR", white = true) { applyRebuilt() }.apply { textSize = 8.5f })
         addView(top, LinearLayout.LayoutParams(-1, dp(54)))
 
         val modes = LinearLayout(this@SmaliStudioActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.rgb(29, 31, 36))
-            SearchMode.entries.forEach { m ->
-                addView(small(m.label) { mode = m; refreshResults() })
-            }
+            setBackgroundColor(UiPreferences.elevatedSurface(this@SmaliStudioActivity))
+            SearchMode.entries.forEach { m -> addView(small(m.label) { mode = m; refreshResults(immediate = true) }) }
         }
         addView(HorizontalScrollView(this@SmaliStudioActivity).apply {
             isHorizontalScrollBarEnabled = false
@@ -113,35 +125,39 @@ class SmaliStudioActivity : ForgeActivity() {
         }, LinearLayout.LayoutParams(-1, dp(42)))
 
         query = EditText(this@SmaliStudioActivity).apply {
-            hint = "Buscar no Smali atual"
+            hint = "Buscar classe, método, campo, invoke, string ou label"
             setSingleLine()
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            setBackgroundColor(Color.rgb(29, 31, 36))
-            addTextChangedListener(SimpleTextWatcher { refreshResults() })
+            textSize = 12.5f
+            setTextColor(UiPreferences.textPrimary(this@SmaliStudioActivity))
+            setHintTextColor(UiPreferences.textSecondary(this@SmaliStudioActivity))
+            setBackgroundColor(UiPreferences.surface(this@SmaliStudioActivity))
+            setPadding(dp(10), 0, dp(10), 0)
+            addTextChangedListener(SimpleTextWatcher { refreshResults(immediate = false) })
         }
         addView(query, LinearLayout.LayoutParams(-1, dp(46)))
 
         list = ListView(this@SmaliStudioActivity).apply {
-            setBackgroundColor(Color.rgb(16, 17, 20))
-            divider = null
+            setBackgroundColor(UiPreferences.background(this@SmaliStudioActivity))
+            divider = android.graphics.drawable.ColorDrawable(UiPreferences.divider(this@SmaliStudioActivity))
+            dividerHeight = dp(1)
             setOnItemClickListener { _, _, position, _ -> rows.getOrNull(position)?.let(::openRow) }
             setOnItemLongClickListener { _, _, position, _ -> rows.getOrNull(position)?.let(::showRowInfo); true }
         }
         addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
-    private fun button(label: String, action: () -> Unit) = Button(this).apply {
+    private fun button(label: String, white: Boolean = false, action: () -> Unit) = Button(this).apply {
         text = label
         minWidth = dp(44)
-        setTextColor(Color.WHITE)
+        setTextColor(if (white) Color.WHITE else UiPreferences.textPrimary(this@SmaliStudioActivity))
         setBackgroundColor(Color.TRANSPARENT)
         setOnClickListener { action() }
     }
 
-    private fun small(label: String, action: () -> Unit) = button(label, action).apply {
-        textSize = 9f
+    private fun small(label: String, action: () -> Unit) = button(label, action = action).apply {
+        textSize = 8.8f
         setPadding(dp(10), 0, dp(10), 0)
+        setTextColor(UiPreferences.accent(this@SmaliStudioActivity))
     }
 
     private fun materializeAndDisassemble() {
@@ -149,52 +165,62 @@ class SmaliStudioActivity : ForgeActivity() {
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    if (smaliDir.exists()) smaliDir.deleteRecursively()
-                    require(smaliDir.mkdirs() || smaliDir.isDirectory) { "Falha ao preparar workspace Smali" }
-                    rebuiltDex.delete()
-
                     val backend = graph.resolver.backendFor(location)
                     val node = backend.stat(location)
                     require(node.size in 1..MAX_DEX_BYTES) { "DEX vazio ou grande demais" }
-                    backend.openInput(location).use { input ->
-                        FileOutputStream(inputDex).buffered(128 * 1024).use { output -> input.copyTo(output, 128 * 1024) }
+                    val fingerprint = "${location.displayPath}|${node.size}|${node.modified}"
+                    val cacheValid = cacheMarker.isFile && cacheMarker.readText() == fingerprint &&
+                        inputDex.isFile && inputDex.length() == node.size && smaliDir.isDirectory
+
+                    rebuiltDex.delete()
+                    if (!cacheValid) {
+                        if (smaliDir.exists()) smaliDir.deleteRecursively()
+                        require(smaliDir.mkdirs() || smaliDir.isDirectory) { "Falha ao preparar workspace Smali" }
+                        val tempDex = File(workspace, "input.dex.tmp")
+                        backend.openInput(location).use { input ->
+                            FileOutputStream(tempDex).buffered(256 * 1024).use { output -> input.copyTo(output, 256 * 1024) }
+                        }
+                        validateDex(tempDex)
+                        Files.move(tempDex.toPath(), inputDex.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                        val dex = DexFileFactory.loadDexFile(inputDex, Opcodes.getDefault())
+                        val options = BaksmaliOptions().apply { apiLevel = API_LEVEL }
+                        if (!Baksmali.disassembleDexFile(dex, smaliDir, workers(), options)) error("Baksmali não conseguiu desmontar o DEX")
+                        cacheMarker.writeText(fingerprint)
                     }
-                    validateDex(inputDex)
-                    val dex = DexFileFactory.loadDexFile(inputDex, Opcodes.getDefault())
-                    val options = BaksmaliOptions().apply { apiLevel = API_LEVEL }
-                    if (!Baksmali.disassembleDexFile(dex, smaliDir, workers(), options)) {
-                        error("Baksmali não conseguiu desmontar o DEX")
-                    }
-                    smaliDir.walkTopDown()
+
+                    val listed = smaliDir.walkTopDown()
                         .onEnter { !Files.isSymbolicLink(it.toPath()) }
                         .filter { it.isFile && it.extension.equals("smali", ignoreCase = true) }
                         .take(MAX_LISTED_FILES)
                         .toList()
+                    listed to cacheValid
                 }
-            }.onSuccess {
+            }.onSuccess { (listed, cacheHit) ->
                 if (!canTouchUi()) return@onSuccess
-                files = it
+                files = listed
                 disassembled = true
                 rebuilt = false
                 val descriptor = intent.getStringExtra(EXTRA_CLASS_DESCRIPTOR)
-                if (!descriptor.isNullOrBlank()) {
-                    query.setText(descriptor.removePrefix("L").removeSuffix(";").replace('/', File.separatorChar))
-                } else refreshResults()
-                status.text = "$displayName • ${files.size} classes Smali"
+                if (!descriptor.isNullOrBlank()) query.setText(descriptor.removePrefix("L").removeSuffix(";").replace('/', File.separatorChar))
+                else refreshResults(immediate = true)
+                status.text = "$displayName • ${files.size} classes${if (cacheHit) " • cache" else ""}"
             }.onFailure { showError(cleanError(it)) }
         }
     }
 
-    private fun refreshResults() {
+    private fun refreshResults(immediate: Boolean = false) {
         if (!disassembled || !::list.isInitialized || !canTouchUi()) return
         val search = query.text?.toString().orEmpty().trim()
-        status.text = "$displayName • buscando ${mode.label.lowercase(Locale.ROOT)}…"
-        scope.launch {
+        searchJob?.cancel()
+        searchJob = scope.launch {
+            if (!immediate) delay(180)
+            if (!canTouchUi()) return@launch
+            status.text = "$displayName • buscando ${mode.label.lowercase(Locale.ROOT)}…"
             runCatching { withContext(Dispatchers.IO) { buildRows(mode, search) } }
                 .onSuccess {
                     if (!canTouchUi()) return@onSuccess
                     rows = it
-                    list.adapter = ArrayAdapter(this@SmaliStudioActivity, android.R.layout.simple_list_item_1, it.map(Row::display))
+                    list.adapter = RowAdapter(it.map(Row::display))
                     status.text = "$displayName • ${it.size} resultado(s) • ${mode.label}"
                 }
                 .onFailure { showError(cleanError(it)) }
@@ -209,7 +235,6 @@ class SmaliStudioActivity : ForgeActivity() {
                 .take(MAX_RESULTS)
                 .toList()
         }
-
         val result = ArrayList<Row>()
         for (file in files) {
             if (result.size >= MAX_RESULTS) break
@@ -237,9 +262,8 @@ class SmaliStudioActivity : ForgeActivity() {
 
     private fun openRow(row: Row) {
         if (!canTouchUi()) return
-        val file = row.file
         val intent = Intent(this, TextEditorActivity::class.java)
-            .putFileLocation(FileLocation.Direct(file.path), file.name)
+            .putFileLocation(FileLocation.Direct(row.file.path), row.file.name)
         if (row is HitRow) {
             intent.putExtra(EXTRA_REQUESTED_LINE, row.line)
             toast("${row.relative}:${row.line}")
@@ -343,6 +367,7 @@ class SmaliStudioActivity : ForgeActivity() {
                         runCatching { withContext(Dispatchers.IO) { applyValidatedDex() } }
                             .onSuccess {
                                 if (canTouchUi()) {
+                                    cacheMarker.delete()
                                     toast("DEX aplicado")
                                     status.text = "$displayName • aplicado"
                                 }
@@ -399,13 +424,9 @@ class SmaliStudioActivity : ForgeActivity() {
             .mapNotNull { it.message?.takeIf(String::isNotBlank) }
             .firstOrNull()
             ?: error.javaClass.simpleName
-        return raw
-            .replace(workspace.path + File.separator, "")
+        return raw.replace(workspace.path + File.separator, "")
             .replace(smaliDir.path + File.separator, "")
-            .lineSequence()
-            .take(12)
-            .joinToString("\n")
-            .take(2_000)
+            .lineSequence().take(12).joinToString("\n").take(2_000)
     }
 
     private fun canTouchUi(): Boolean = !isFinishing && !isDestroyed
@@ -413,11 +434,7 @@ class SmaliStudioActivity : ForgeActivity() {
     private fun showError(message: String) {
         if (!canTouchUi()) return
         runCatching {
-            AlertDialog.Builder(this)
-                .setTitle("Smali/DEX Studio")
-                .setMessage(message)
-                .setPositiveButton("OK", null)
-                .show()
+            AlertDialog.Builder(this).setTitle("Smali/DEX Studio").setMessage(message).setPositiveButton("OK", null).show()
         }
     }
 
@@ -427,6 +444,17 @@ class SmaliStudioActivity : ForgeActivity() {
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun workers() = Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
+
+    private inner class RowAdapter(values: List<String>) : ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, values) {
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val view = super.getView(position, convertView, parent) as TextView
+            view.setTextColor(UiPreferences.textPrimary(this@SmaliStudioActivity))
+            view.setBackgroundColor(UiPreferences.surface(this@SmaliStudioActivity))
+            view.textSize = 12f
+            view.setPadding(dp(12), dp(9), dp(8), dp(9))
+            return view
+        }
+    }
 
     private sealed interface Row {
         val file: File
