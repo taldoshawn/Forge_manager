@@ -32,6 +32,11 @@ abstract class ForgeActivity : Activity() {
         applySystemBarAppearance()
     }
 
+    override fun onResume() {
+        super.onResume()
+        applySystemBarAppearance()
+    }
+
     override fun setContentView(view: View?) {
         super.setContentView(view)
         view?.let(::installSafeInsets)
@@ -56,9 +61,10 @@ abstract class ForgeActivity : Activity() {
                 window.statusBarColor = UiPreferences.surface(this@ForgeActivity)
                 window.navigationBarColor = UiPreferences.surface(this@ForgeActivity)
             }
+            val light = UiPreferences.isLight(this@ForgeActivity)
             WindowInsetsControllerCompat(window, window.decorView).apply {
-                isAppearanceLightStatusBars = false
-                isAppearanceLightNavigationBars = false
+                isAppearanceLightStatusBars = light
+                isAppearanceLightNavigationBars = light
             }
         }
     }
