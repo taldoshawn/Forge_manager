@@ -5,7 +5,9 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
+import android.view.View
 import android.widget.LinearLayout
+import android.widget.TextView
 import com.forgemanager.app.features.settings.UiPreferences
 
 /** Keeps the main toolbar colorful even when MainActivity reapplies a surface tint. */
@@ -39,6 +41,40 @@ class ThemedTopBarLayout @JvmOverloads constructor(
             GradientDrawable.Orientation.LEFT_RIGHT,
             intArrayOf(UiPreferences.accentAlt(context), UiPreferences.accent(context))
         )
+    }
+}
+
+/** Keeps the secondary toolbar line readable over the colorful gradient. */
+class ThemedTopInfoTextView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : TextView(context, attrs) {
+    private var ready = false
+
+    init {
+        ready = true
+        super.setTextColor(Color.argb(230, 255, 255, 255))
+    }
+
+    override fun setTextColor(color: Int) {
+        if (!ready) super.setTextColor(color)
+        else super.setTextColor(Color.argb(230, 255, 255, 255))
+    }
+
+    override fun setTextColor(colors: ColorStateList?) {
+        if (!ready) super.setTextColor(colors)
+        else super.setTextColor(ColorStateList.valueOf(Color.argb(230, 255, 255, 255)))
+    }
+}
+
+/** Dynamic divider for the user-selected white/gray/dark theme. */
+class ThemedDividerView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : View(context, attrs) {
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        setBackgroundColor(UiPreferences.divider(context))
     }
 }
 
