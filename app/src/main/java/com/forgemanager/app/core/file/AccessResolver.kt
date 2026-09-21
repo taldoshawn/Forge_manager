@@ -1,6 +1,7 @@
 package com.forgemanager.app.core.file
 
 import com.forgemanager.app.archive.ArchiveFileBackend
+import com.forgemanager.app.core.security.PathSecurity
 import java.io.File
 
 class AccessResolver(
@@ -17,7 +18,10 @@ class AccessResolver(
     }
 
     private suspend fun resolveDirect(location: FileLocation.Direct, write: Boolean): FileBackend {
-        val file = File(location.path)
+        // Prefer the ZWSP-rewritten path for restricted external dirs so direct access wins
+        // without falling through to Shizuku/root or throwing.
+        val candidatePath = PathSecurity.maybeBypassRestricted(location.path)
+        val file = File(candidatePath)
         val directAllowed = if (write) {
             (file.exists() && file.canWrite()) || (!file.exists() && file.parentFile?.canWrite() == true)
         } else file.canRead()

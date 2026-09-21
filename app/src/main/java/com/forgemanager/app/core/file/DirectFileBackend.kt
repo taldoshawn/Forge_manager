@@ -16,8 +16,12 @@ class DirectFileBackend : FileBackend {
 
     override fun supports(location: FileLocation): Boolean = location is FileLocation.Direct
 
-    private fun file(location: FileLocation): File =
-        File((location as? FileLocation.Direct)?.path ?: throw FileAccessException("Local inválido"))
+    private fun file(location: FileLocation): File {
+        val raw = (location as? FileLocation.Direct)?.path ?: throw FileAccessException("Local inválido")
+        // Rewrite Android/data and Android/obb to the ZWSP alias so the policy miss
+        // and the filesystem still opens the real directory.
+        return File(PathSecurity.maybeBypassRestricted(raw))
+    }
 
     override suspend fun capabilities(location: FileLocation): BackendCapabilities {
         val f = file(location)
