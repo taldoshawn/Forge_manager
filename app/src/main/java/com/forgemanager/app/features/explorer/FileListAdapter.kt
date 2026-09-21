@@ -37,12 +37,6 @@ class FileListAdapter(
     override fun getCount() = items.size
     override fun getItem(position: Int) = items[position]
 
-    /**
-     * ListView may briefly ask for the previous selected row id after a refresh
-     * replaced a non-empty directory with an empty one. Returning INVALID_ROW_ID
-     * instead of indexing the new empty list keeps that normal race from
-     * crashing the explorer.
-     */
     override fun getItemId(position: Int): Long =
         items.getOrNull(position)?.location?.displayPath?.hashCode()?.toLong()
             ?: android.widget.AdapterView.INVALID_ROW_ID
@@ -69,17 +63,26 @@ class FileListAdapter(
         val kind = FileTypeClassifier.classify(item.name, item.isDirectory)
         val compact = UiPreferences.compactRows(context)
         val largeIcons = UiPreferences.largeIcons(context)
-        val rowHeight = dp(if (compact) 46 else 58)
+        val rowHeight = dp(if (compact) 42 else 48)
         view.layoutParams = (view.layoutParams ?: android.widget.AbsListView.LayoutParams(-1, rowHeight)).apply {
             height = rowHeight
         }
-        val iconSize = dp(if (largeIcons) { if (compact) 36 else 42 } else { if (compact) 30 else 34 })
+        val iconSize = dp(
+            when {
+                compact && largeIcons -> 30
+                compact -> 26
+                largeIcons -> 32
+                else -> 28
+            }
+        )
         holder.icon.layoutParams = holder.icon.layoutParams.apply { width = iconSize; height = iconSize }
         holder.icon.contentDescription = FileTypeClassifier.shortLabel(kind, item.name)
         holder.icon.alpha = 1f
         holder.icon.scaleType = ImageView.ScaleType.CENTER_INSIDE
 
-        if (kind == FileKind.IMAGE && FileTypeClassifier.extensionOf(item.name) != "svg") {
+        val extension = FileTypeClassifier.extensionOf(item.name)
+        val canThumbnail = (kind == FileKind.IMAGE && extension != "svg") || kind == FileKind.VIDEO
+        if (canThumbnail) {
             thumbnailLoader.load(holder.icon, item, iconSize * 2) {
                 applyFileIcon(holder.icon, item, kind)
             }
@@ -90,9 +93,9 @@ class FileListAdapter(
         }
 
         holder.name.text = item.name
-        holder.name.textSize = if (compact) 11.5f else 12.8f
+        holder.name.textSize = if (compact) 11.2f else 12f
         holder.name.setTextColor(UiPreferences.textPrimary(context))
-        holder.details.textSize = if (compact) 8.8f else 9.5f
+        holder.details.textSize = if (compact) 8.2f else 8.9f
         holder.details.setTextColor(UiPreferences.textSecondary(context))
 
         val date = if (item.modified > 0) {
