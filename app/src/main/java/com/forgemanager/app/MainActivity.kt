@@ -302,7 +302,16 @@ class MainActivity : Activity() {
 
     private fun navigate(id: PaneId, destination: FileLocation) {
         val target = when (destination) {
-            is FileLocation.Direct -> FileLocation.Direct(PathSecurity.maybeBypassRestricted(destination.path))
+            is FileLocation.Direct -> {
+                // Pick a live readable alias for Android/data|obb so refresh never
+                // falls through to the "authorize SAF/Shizuku/root" dialog.
+                val path = if (PathSecurity.isRestrictedExternal(destination.path)) {
+                    PathSecurity.openablePath(destination.path)
+                } else {
+                    destination.path
+                }
+                FileLocation.Direct(path)
+            }
             else -> destination
         }
         controller.navigate(id, target)
@@ -1096,9 +1105,14 @@ class MainActivity : Activity() {
     private fun ui(id: PaneId) = if (id == PaneId.LEFT) leftUi else rightUi
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     private fun showError(error: Throwable) {
-        val message = when (error) {
+        var message = when (error) {
             is FileAccessException, is SecurityException, is IllegalArgumentException -> error.message ?: "Operação recusada"
             else -> "A operação falhou. Detalhes disponíveis no log de depuração."
+        }
+        // Never show the SAF/Shizuku/root authorization nag for Android/data|obb —
+        // those paths are handled by the Unicode bypass, not by user grants.
+        if (message.contains("Autorize uma pasta SAF") || message.contains("bloqueou este caminho")) {
+            message = "Não foi possível abrir este item em Android/data (bypass indisponível neste dispositivo)."
         }
         AlertDialog.Builder(this).setTitle("Não foi possível concluir").setMessage(message).setPositiveButton("OK", null).show()
     }
