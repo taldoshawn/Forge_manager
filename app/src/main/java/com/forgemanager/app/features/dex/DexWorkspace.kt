@@ -45,24 +45,42 @@ class DexWorkspace private constructor(
     override fun close() { temporaryFiles.forEach { it.delete() } }
 
     companion object {
-        fun open(source: File, cacheDir: File): DexWorkspace {
+        fun open(source: File, cacheDir: File): DexWorkspace = open(listOf(source), cacheDir)
+
+        /** Opens several standalone DEX files and/or APK/JAR containers as one logical project. */
+        fun open(sources: List<File>, cacheDir: File): DexWorkspace {
+            require(sources.isNotEmpty()) { "Nenhum DEX selecionado" }
             val temps = ArrayList<File>()
             val parsed = ArrayList<DexSummary>()
+            var totalBytes = 0L
             try {
-                if (source.extension.equals("dex", true)) parsed += parseDex(source, source.name)
-                else ZipFile(source).use { zip ->
-                    val entries = zip.entries().asSequence().filter { Regex("classes(\\d*)\\.dex").matches(it.name) }.toList()
-                    require(entries.isNotEmpty()) { "Nenhum DEX encontrado" }
-                    var total = 0L
-                    for (entry in entries) {
-                        require(entry.size in 0..MAX_DEX_BYTES) { "DEX grande demais" }
-                        total += entry.size
-                        require(total <= MAX_TOTAL_BYTES) { "Conjunto DEX grande demais" }
-                        val temp = File.createTempFile("dex-", ".dex", cacheDir).also(temps::add)
-                        zip.getInputStream(entry).use { input -> FileOutputStream(temp).use { input.copyTo(it, 128 * 1024) } }
-                        parsed += parseDex(temp, entry.name)
+                for (source in sources.distinctBy { it.canonicalPath }) {
+                    require(source.isFile) { "Arquivo não encontrado: ${source.name}" }
+                    if (source.extension.equals("dex", true)) {
+                        require(source.length() in 1..MAX_DEX_BYTES) { "DEX grande demais: ${source.name}" }
+                        totalBytes += source.length()
+                        require(totalBytes <= MAX_TOTAL_BYTES) { "Conjunto DEX grande demais" }
+                        parsed += parseDex(source, source.name)
+                    } else {
+                        ZipFile(source).use { zip ->
+                            val entries = zip.entries().asSequence()
+                                .filter { Regex("(?:.*/)?classes(\\d*)\\.dex").matches(it.name) }
+                                .toList()
+                            require(entries.isNotEmpty()) { "Nenhum DEX encontrado em ${source.name}" }
+                            for (entry in entries) {
+                                require(entry.size in 0..MAX_DEX_BYTES) { "DEX grande demais" }
+                                totalBytes += entry.size.coerceAtLeast(0)
+                                require(totalBytes <= MAX_TOTAL_BYTES) { "Conjunto DEX grande demais" }
+                                val temp = File.createTempFile("dex-", ".dex", cacheDir).also(temps::add)
+                                zip.getInputStream(entry).use { input ->
+                                    FileOutputStream(temp).use { output -> input.copyTo(output, 128 * 1024) }
+                                }
+                                parsed += parseDex(temp, "${source.name}!${entry.name.substringAfterLast('/')}")
+                            }
+                        }
                     }
                 }
+                require(parsed.isNotEmpty()) { "Nenhum DEX válido encontrado" }
                 return DexWorkspace(parsed, temps)
             } catch (error: Throwable) {
                 temps.forEach { it.delete() }
@@ -120,7 +138,7 @@ class DexWorkspace private constructor(
             for (i in 0 until methodsSize) {
                 input.seek(methodsOff + i * 8L)
                 val classIndex = readUShortLE(input)
-                readUShortLE(input) // proto index; names remain compatible with the existing UI/search contract.
+                readUShortLE(input)
                 val nameIndex = readUIntLE(input).toInt()
                 methods += "${types.getOrElse(classIndex) { "?" }}->${strings.getOrElse(nameIndex) { "?" }}"
             }
@@ -133,7 +151,6 @@ class DexWorkspace private constructor(
                 val accessFlags = readUIntLE(input)
                 val superIndexRaw = readUIntLE(input)
                 val interfacesOff = readUIntLE(input)
-                // Remaining class_def fields are not needed for navigation here.
                 val descriptor = types.getOrElse(classIndex) { "<invalid>" }
                 val superDescriptor = if (superIndexRaw == NO_INDEX) null else types.getOrNull(superIndexRaw.toInt())
                 val interfaces = readTypeList(input, interfacesOff, types)
@@ -188,6 +205,6 @@ class DexWorkspace private constructor(
         private const val NO_INDEX = 0xffffffffL
         private const val MAX_STRING_BYTES = 4 * 1024 * 1024
         private const val MAX_DEX_BYTES = 128L * 1024 * 1024
-        private const val MAX_TOTAL_BYTES = 256L * 1024 * 1024
+        private const val MAX_TOTAL_BYTES = 512L * 1024 * 1024
     }
 }
