@@ -39,7 +39,7 @@ class LineNumberEditText @JvmOverloads constructor(
     }
     private val gutter = (48 * resources.displayMetrics.density).toInt()
     private val fastTouchWidth = (26 * resources.displayMetrics.density).toInt()
-    private val fastRailWidth = (4 * resources.displayMetrics.density).coerceAtLeast(2).toFloat()
+    private val fastRailWidth = (4 * resources.displayMetrics.density).coerceAtLeast(2f)
 
     init {
         typeface = Typeface.MONOSPACE
